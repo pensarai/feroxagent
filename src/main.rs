@@ -1,9 +1,6 @@
 use std::{
-    env::{
-        args,
-        consts::{ARCH, OS},
-    },
-    fs::{create_dir, remove_file, File},
+    env::args,
+    fs::{create_dir, remove_file},
     io::{stderr, BufRead, BufReader},
     ops::Index,
     path::Path,
@@ -19,7 +16,7 @@ use tokio::{
 };
 use tokio_util::codec::{FramedRead, LinesCodec};
 
-use feroxbuster::{
+use feroxagent::{
     banner::{Banner, UPDATE_URL},
     config::{Configuration, OutputLevel},
     event_handlers::{
@@ -34,59 +31,17 @@ use feroxbuster::{
     progress::PROGRESS_PRINTER,
     scan_manager::{self, ScanType},
     scanner,
+    smart_wordlist::{self, GeneratorConfig, output_wordlist},
     utils::{fmt_err, slugify_filename},
-    SECONDARY_WORDLIST,
 };
 #[cfg(not(target_os = "windows"))]
-use feroxbuster::{utils::set_open_file_limit, DEFAULT_OPEN_FILE_LIMIT};
+use feroxagent::{utils::set_open_file_limit, DEFAULT_OPEN_FILE_LIMIT};
 use lazy_static::lazy_static;
 use regex::Regex;
-use self_update::cargo_crate_version;
 
 lazy_static! {
     /// Limits the number of parallel scans active at any given time when using --parallel
     static ref PARALLEL_LIMITER: Semaphore = Semaphore::new(0);
-}
-
-/// Create a Vec of Strings from the given wordlist then stores it inside an Arc
-fn get_unique_words_from_wordlist(path: &str) -> Result<Arc<Vec<String>>> {
-    log::trace!("enter: get_unique_words_from_wordlist({path})");
-    let mut trimmed_word = false;
-
-    let file = File::open(path).with_context(|| format!("Could not open {path}"))?;
-
-    let reader = BufReader::new(file);
-
-    // this empty string ensures that we call Requester::request with the base url, i.e.
-    // `http://localhost/` instead of going straight into `http://localhost/WORD.EXT`.
-    // for vanilla scans, it doesn't matter all that much, but it can be a significant difference
-    // when `-e` is used, depending on the content at the base url.
-    let mut words = vec![String::from("")];
-
-    for line in reader.lines() {
-        line.map(|result| {
-            if !result.starts_with('#') && !result.is_empty() {
-                if result.starts_with('/') {
-                    words.push(result.trim_start_matches('/').to_string());
-                    trimmed_word = true;
-                } else {
-                    words.push(result);
-                }
-            }
-        })
-        .ok();
-    }
-
-    if trimmed_word {
-        log::warn!("Some words in the wordlist started with a leading forward-slash; those words were trimmed (i.e. /word -> word)");
-    }
-
-    log::trace!(
-        "exit: get_unique_words_from_wordlist -> Arc<wordlist[{} words...]>",
-        words.len()
-    );
-
-    Ok(Arc::new(words))
 }
 
 /// Determine whether it's a single url scan or urls are coming from stdin, then scan as needed
@@ -229,83 +184,53 @@ async fn wrapped_main(config: Arc<Configuration>) -> Result<()> {
         PROGRESS_PRINTER.println("");
     });
 
-    // check if update_app is true
-    if config.update_app {
-        match update_app().await {
-            Err(e) => eprintln!("\n[ERROR] {e}"),
-            Ok(self_update::Status::UpToDate(version)) => {
-                eprintln!("\nFeroxbuster {version} is up to date")
-            }
-            Ok(self_update::Status::Updated(version)) => {
-                eprintln!("\nFeroxbuster updated to {version} version")
-            }
-        }
-        exit(0);
-    }
+    // Generate smart wordlist using LLM
+    eprintln!("[*] Generating smart wordlist from recon data...");
 
-    let words = if config.wordlist.starts_with("http") {
-        // found a url scheme, attempt to download the wordlist
-        let response = config
-            .client
-            .get(&config.wordlist)
-            .send()
-            .await
-            .context(format!(
-                "Unable to download wordlist from remote url: {}",
-                config.wordlist
-            ))?;
+    let generator_config = GeneratorConfig {
+        target_url: config.target_url.clone(),
+        anthropic_key: config.anthropic_key.clone(),
+        probe_enabled: config.probe,
+        recon_file: if config.recon_file.is_empty() {
+            None
+        } else {
+            Some(config.recon_file.clone())
+        },
+    };
 
-        if !response.status().is_success() {
-            // status code isn't a 200, bail
-            bail!(
-                "[{}] Unable to download wordlist from url: {}",
-                response.status().as_str(),
-                config.wordlist
-            );
-        }
+    let wordlist_result = smart_wordlist::generate_wordlist(generator_config, &config.client).await;
 
-        // attempt to get the filename from the url's path
-        let Some(mut path_segments) = response.url().path_segments() else {
-            bail!("Unable to parse path from url: {}", response.url());
-        };
-
-        let Some(filename) = path_segments.next_back() else {
-            bail!(
-                "Unable to parse filename from url's path: {}",
-                response.url().path()
-            );
-        };
-
-        let filename = filename.to_string();
-
-        // read the body and write it to disk, then use existing code to read the wordlist
-        let body = response.text().await?;
-
-        std::fs::write(&filename, body)?;
-
-        get_unique_words_from_wordlist(&filename)?
-    } else {
-        match get_unique_words_from_wordlist(&config.wordlist) {
-            Ok(w) => w,
-            Err(err) => {
-                let secondary = Path::new(SECONDARY_WORDLIST);
-
-                if secondary.exists() {
-                    eprintln!("Found wordlist in secondary location");
-                    get_unique_words_from_wordlist(SECONDARY_WORDLIST)?
-                } else {
-                    return Err(err);
-                }
-            }
+    let generated_words = match wordlist_result {
+        Ok(words) => words,
+        Err(e) => {
+            bail!("Failed to generate wordlist: {}", e);
         }
     };
 
-    if words.len() <= 1 {
-        // the check is now <= 1 due to the initial empty string added in 2.6.0
-        // 1 -> empty wordlist
-        // 0 -> error
-        bail!("Did not find any words in {}", config.wordlist);
+    eprintln!("[+] Generated {} paths for scanning", generated_words.len());
+
+    // Handle --wordlist-only mode
+    if config.wordlist_only {
+        output_wordlist(&generated_words);
+        exit(0);
     }
+
+    if generated_words.is_empty() {
+        bail!("Generated wordlist is empty. Ensure recon data is provided via stdin or --recon-file");
+    }
+
+    // Convert to the format expected by the scanner
+    // Add empty string at start for base URL check (same as original feroxbuster behavior)
+    let mut words = vec![String::from("")];
+    for word in generated_words {
+        // Strip leading slash if present (scanner adds it)
+        let trimmed = word.trim_start_matches('/').to_string();
+        if !trimmed.is_empty() {
+            words.push(trimmed);
+        }
+    }
+
+    let words = Arc::new(words);
 
     // spawn all event handlers, expect back a JoinHandle and a *Handle to the specific event
     let (stats_task, stats_handle) = StatsHandler::initialize(config.clone());
@@ -618,24 +543,6 @@ async fn clean_up(handles: Arc<Handles>, tasks: Tasks) -> Result<()> {
     Ok(())
 }
 
-async fn update_app() -> Result<self_update::Status, Box<dyn ::std::error::Error>> {
-    let target_os = format!("{ARCH}-{OS}");
-    let status = tokio::task::spawn_blocking(move || {
-        self_update::backends::github::Update::configure()
-            .repo_owner("epi052")
-            .repo_name("feroxbuster")
-            .bin_name("feroxbuster")
-            .target(target_os.as_str())
-            .show_download_progress(true)
-            .current_version(cargo_crate_version!())
-            .build()?
-            .update()
-    })
-    .await??;
-
-    Ok(status)
-}
-
 fn main() -> Result<()> {
     let config = Arc::new(Configuration::new().with_context(|| "Could not create Configuration")?);
 
@@ -659,35 +566,7 @@ fn main() -> Result<()> {
         let future = wrapped_main(config.clone());
         if let Err(e) = runtime.block_on(future) {
             eprintln!("{e}");
-
-            // the code below is to facilitate testing tests/test_banner entries. Since it's an
-            // integration test, normal test detection (cfg!(test), etc...) won't work. So, in
-            // the tests themselves, we pass
-            // `--wordlist /definitely/doesnt/exist/0cd7fed0-47f4-4b18-a1b0-ac39708c1676`
-            // and look for that here to print the banner.
-            //
-            // this change became a necessity once we moved wordlist parsing out of `scan` and into
-            // `wrapped_main`.
-            if e.to_string()
-                .contains("/definitely/doesnt/exist/0cd7fed0-47f4-4b18-a1b0-ac39708c1676")
-            {
-                // support the handful of tests that use `--stdin`
-                let targets: Vec<_> = if config.cached_stdin.is_empty() {
-                    vec!["http://localhost".to_string()]
-                } else {
-                    config.cached_stdin.clone()
-                };
-
-                // print the banner to stderr
-                let std_stderr = stderr(); // std::io::stderr
-                let banner = Banner::new(&targets, &config);
-                if (!config.quiet && !config.silent) || config.parallel != 0 {
-                    banner.print_to(std_stderr, config).unwrap();
-                }
-            }
-
-            // if we've encountered an error before clean_up can be called (i.e. a wordlist error)
-            // we need to at least spin-down the progress bar
+            // spin-down the progress bar on error
             PROGRESS_PRINTER.finish();
         };
     }

@@ -6,7 +6,7 @@ complete -c feroxbuster -l data-json -d 'Set -H \'Content-Type: application/json
 complete -c feroxbuster -s p -l proxy -d 'Proxy to use for requests (ex: http(s)://host:port, socks5(h)://host:port)' -r -f
 complete -c feroxbuster -s P -l replay-proxy -d 'Send only unfiltered requests through a Replay Proxy, instead of all requests' -r -f
 complete -c feroxbuster -s R -l replay-codes -d 'Status Codes to send through a Replay Proxy when found (default: --status-codes value)' -r
-complete -c feroxbuster -s a -l user-agent -d 'Sets the User-Agent (default: feroxbuster/2.13.1)' -r
+complete -c feroxbuster -s a -l user-agent -d 'Sets the User-Agent (default: feroxagent/0.1.0)' -r
 complete -c feroxbuster -s x -l extensions -d 'File extension(s) to search for (ex: -x php -x pdf js); reads values (newline-separated) from file if input starts with an @ (ex: @ext.txt)' -r
 complete -c feroxbuster -s m -l methods -d 'Which HTTP request method(s) should be sent (default: GET)' -r
 complete -c feroxbuster -l data -d 'Request\'s Body; can read data from a file if input starts with an @ (ex: @post.bin)' -r
@@ -34,7 +34,7 @@ complete -c feroxbuster -l parallel -d 'Run parallel feroxbuster instances (one 
 complete -c feroxbuster -l rate-limit -d 'Limit number of requests per second (per directory) (default: 0, i.e. no limit)' -r
 complete -c feroxbuster -l response-size-limit -d 'Limit size of response body to read in bytes (default: 4MB)' -r
 complete -c feroxbuster -l time-limit -d 'Limit total run time of all scans (ex: --time-limit 10m)' -r
-complete -c feroxbuster -s w -l wordlist -d 'Path or URL of the wordlist' -r -F
+complete -c feroxbuster -l recon-file -d 'Read recon URLs from file instead of stdin' -r -F
 complete -c feroxbuster -s B -l collect-backups -d 'Automatically request likely backup extensions for "found" urls (default: ~, .bak, .bak2, .old, .1)' -r
 complete -c feroxbuster -s I -l dont-collect -d 'File extension(s) to Ignore while collecting extensions (only used with --collect-extensions)' -r
 complete -c feroxbuster -s o -l output -d 'Output file to write results to (use w/ --json for JSON entries)' -r -F
@@ -54,6 +54,8 @@ complete -c feroxbuster -s n -l no-recursion -d 'Do not scan recursively'
 complete -c feroxbuster -l force-recursion -d 'Force recursion attempts on all \'found\' endpoints (still respects recursion depth)'
 complete -c feroxbuster -s e -l extract-links -d 'Extract links from response body (html, javascript, etc...); make new requests based on findings (default: true)'
 complete -c feroxbuster -l dont-extract-links -d 'Don\'t extract links from response body (html, javascript, etc...)'
+complete -c feroxbuster -l probe -d 'Make HTTP requests to gather more context before generating wordlist'
+complete -c feroxbuster -l wordlist-only -d 'Output generated wordlist to stdout without scanning'
 complete -c feroxbuster -l auto-tune -d 'Automatically lower scan rate when an excessive amount of errors are encountered'
 complete -c feroxbuster -l auto-bail -d 'Automatically stop scanning when an excessive amount of errors are encountered'
 complete -c feroxbuster -s D -l dont-filter -d 'Don\'t auto-filter wildcard responses'

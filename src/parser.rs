@@ -20,7 +20,7 @@ lazy_static! {
 
     /// help string for user agent, your guess is as good as mine as to why this is required...
     static ref DEFAULT_USER_AGENT: String = format!(
-        "Sets the User-Agent (default: feroxbuster/{})",
+        "Sets the User-Agent (default: feroxagent/{})",
         crate_version!()
     );
 }
@@ -568,15 +568,29 @@ pub fn initialize() -> Command {
                 .help("Limit total run time of all scans (ex: --time-limit 10m)")
         )
         .arg(
-            Arg::new("wordlist")
-                .short('w')
-                .long("wordlist")
+            Arg::new("recon_file")
+                .long("recon-file")
                 .value_hint(ValueHint::FilePath)
                 .value_name("FILE")
-                .help("Path or URL of the wordlist")
-                .help_heading("Scan settings")
+                .help("Read recon URLs from file instead of stdin")
+                .help_heading("Smart wordlist settings")
                 .num_args(1),
-        ).arg(
+        )
+        .arg(
+            Arg::new("probe")
+                .long("probe")
+                .num_args(0)
+                .help_heading("Smart wordlist settings")
+                .help("Make HTTP requests to gather more context before generating wordlist"),
+        )
+        .arg(
+            Arg::new("wordlist_only")
+                .long("wordlist-only")
+                .num_args(0)
+                .help_heading("Smart wordlist settings")
+                .help("Output generated wordlist to stdout without scanning"),
+        )
+.arg(
             Arg::new("auto_tune")
                 .long("auto-tune")
                 .num_args(0)
@@ -771,49 +785,30 @@ fn valid_time_spec(time_spec: &str) -> Result<String, String> {
 }
 
 const EPILOGUE: &str = r#"NOTE:
-    Options that take multiple values are very flexible.  Consider the following ways of specifying
-    extensions:
-        ./feroxbuster -u http://127.1 -x pdf -x js,html -x php txt json,docx
+    feroxagent is an AI-powered content discovery tool. It generates smart wordlists
+    from recon data using LLM analysis, then scans targets with the generated wordlist.
 
-    The command above adds .pdf, .js, .html, .php, .txt, .json, and .docx to each url
-
-    All of the methods above (multiple flags, space separated, comma separated, etc...) are valid
-    and interchangeable.  The same goes for urls, headers, status codes, queries, and size filters.
+    Requires ANTHROPIC_API_KEY environment variable to be set:
+        export ANTHROPIC_API_KEY="sk-ant-..."
 
 EXAMPLES:
+    Basic usage with recon data from katana:
+        katana -u http://127.1 | ./feroxagent -u http://127.1
+
+    With HTTP probing for more context:
+        katana -u http://127.1 | ./feroxagent -u http://127.1 --probe
+
+    Output wordlist only (don't scan):
+        katana -u http://127.1 | ./feroxagent -u http://127.1 --wordlist-only > custom.txt
+
+    Read recon from file:
+        ./feroxagent -u http://127.1 --recon-file recon.txt
+
+    Proxy traffic through Burp:
+        katana -u http://127.1 | ./feroxagent -u http://127.1 --burp
+
     Multiple headers:
-        ./feroxbuster -u http://127.1 -H Accept:application/json "Authorization: Bearer {token}"
-
-    IPv6, non-recursive scan with INFO-level logging enabled:
-        ./feroxbuster -u http://[::1] --no-recursion -vv
-
-    Read urls from STDIN; pipe only resulting urls out to another tool
-        cat targets | ./feroxbuster --stdin --silent -s 200 301 302 --redirects -x js | fff -s 200 -o js-files
-
-    Proxy traffic through Burp
-        ./feroxbuster -u http://127.1 --burp
-
-    Proxy traffic through a SOCKS proxy
-        ./feroxbuster -u http://127.1 --proxy socks5://127.0.0.1:9050
-
-    Pass auth token via query parameter
-        ./feroxbuster -u http://127.1 --query token=0123456789ABCDEF
-
-    Ludicrous speed... go!
-        ./feroxbuster -u http://127.1 --threads 200
-        
-    Limit to a total of 60 active requests at any given time (threads * scan limit)
-        ./feroxbuster -u http://127.1 --threads 30 --scan-limit 2
-    
-    Send all 200/302 responses to a proxy (only proxy requests/responses you care about)
-        ./feroxbuster -u http://127.1 --replay-proxy http://localhost:8080 --replay-codes 200 302 --insecure
-        
-    Abort or reduce scan speed to individual directory scans when too many errors have occurred
-        ./feroxbuster -u http://127.1 --auto-bail
-        ./feroxbuster -u http://127.1 --auto-tune
-        
-    Examples and demonstrations of all features
-        https://epi052.github.io/feroxbuster-docs/docs/examples/
+        katana -u http://127.1 | ./feroxagent -u http://127.1 -H Accept:application/json "Authorization: Bearer {token}"
     "#;
 
 #[cfg(test)]
@@ -824,7 +819,7 @@ mod tests {
     /// initialize parser, expect a clap::App returned
     fn parser_initialize_gives_defaults() {
         let app = initialize();
-        assert_eq!(app.get_name(), "feroxbuster");
+        assert_eq!(app.get_name(), "feroxagent");
     }
 
     #[test]

@@ -27,8 +27,8 @@ _feroxbuster() {
 '--replay-proxy=[Send only unfiltered requests through a Replay Proxy, instead of all requests]:REPLAY_PROXY:_urls' \
 '*-R+[Status Codes to send through a Replay Proxy when found (default\: --status-codes value)]:REPLAY_CODE:_default' \
 '*--replay-codes=[Status Codes to send through a Replay Proxy when found (default\: --status-codes value)]:REPLAY_CODE:_default' \
-'-a+[Sets the User-Agent (default\: feroxbuster/2.13.1)]:USER_AGENT:_default' \
-'--user-agent=[Sets the User-Agent (default\: feroxbuster/2.13.1)]:USER_AGENT:_default' \
+'-a+[Sets the User-Agent (default\: feroxagent/0.1.0)]:USER_AGENT:_default' \
+'--user-agent=[Sets the User-Agent (default\: feroxagent/0.1.0)]:USER_AGENT:_default' \
 '*-x+[File extension(s) to search for (ex\: -x php -x pdf js); reads values (newline-separated) from file if input starts with an @ (ex\: @ext.txt)]:FILE_EXTENSION:_default' \
 '*--extensions=[File extension(s) to search for (ex\: -x php -x pdf js); reads values (newline-separated) from file if input starts with an @ (ex\: @ext.txt)]:FILE_EXTENSION:_default' \
 '*-m+[Which HTTP request method(s) should be sent (default\: GET)]:HTTP_METHODS:_default' \
@@ -71,8 +71,7 @@ _feroxbuster() {
 '--rate-limit=[Limit number of requests per second (per directory) (default\: 0, i.e. no limit)]:RATE_LIMIT:_default' \
 '--response-size-limit=[Limit size of response body to read in bytes (default\: 4MB)]:BYTES:_default' \
 '--time-limit=[Limit total run time of all scans (ex\: --time-limit 10m)]:TIME_SPEC:_default' \
-'-w+[Path or URL of the wordlist]:FILE:_files' \
-'--wordlist=[Path or URL of the wordlist]:FILE:_files' \
+'--recon-file=[Read recon URLs from file instead of stdin]:FILE:_files' \
 '-B+[Automatically request likely backup extensions for "found" urls (default\: ~, .bak, .bak2, .old, .1)]' \
 '--collect-backups=[Automatically request likely backup extensions for "found" urls (default\: ~, .bak, .bak2, .old, .1)]' \
 '*-I+[File extension(s) to Ignore while collecting extensions (only used with --collect-extensions)]:FILE_EXTENSION:_default' \
@@ -101,6 +100,8 @@ _feroxbuster() {
 '-e[Extract links from response body (html, javascript, etc...); make new requests based on findings (default\: true)]' \
 '--extract-links[Extract links from response body (html, javascript, etc...); make new requests based on findings (default\: true)]' \
 '--dont-extract-links[Don'\''t extract links from response body (html, javascript, etc...)]' \
+'--probe[Make HTTP requests to gather more context before generating wordlist]' \
+'--wordlist-only[Output generated wordlist to stdout without scanning]' \
 '(--auto-bail)--auto-tune[Automatically lower scan rate when an excessive amount of errors are encountered]' \
 '--auto-bail[Automatically stop scanning when an excessive amount of errors are encountered]' \
 '-D[Don'\''t auto-filter wildcard responses]' \

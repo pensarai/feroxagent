@@ -4,7 +4,7 @@ use crate::{
     traits::FeroxSerialize,
     utils::{module_colorizer, parse_url_with_raw_path, status_colorizer},
     DEFAULT_BACKUP_EXTENSIONS, DEFAULT_IGNORED_EXTENSIONS, DEFAULT_METHOD, DEFAULT_STATUS_CODES,
-    DEFAULT_WORDLIST, VERSION,
+    VERSION,
 };
 use anyhow::{bail, Result};
 use log::LevelFilter;
@@ -90,14 +90,9 @@ pub(super) fn backup_extensions() -> Vec<String> {
         .collect()
 }
 
-/// default wordlist
-pub(super) fn wordlist() -> String {
-    String::from(DEFAULT_WORDLIST)
-}
-
 /// default user-agent
 pub(super) fn user_agent() -> String {
-    format!("feroxbuster/{VERSION}")
+    format!("feroxagent/{VERSION}")
 }
 
 /// default recursion depth

@@ -2,7 +2,7 @@ use super::utils::{
     backup_extensions, depth, determine_requester_policy, extract_links, ignored_extensions,
     methods, parse_request_file, report_and_exit, request_protocol, response_size_limit,
     save_state, serialized_type, split_header, split_query, status_codes, threads, timeout,
-    user_agent, wordlist, OutputLevel, RequesterPolicy,
+    user_agent, OutputLevel, RequesterPolicy,
 };
 
 use crate::config::determine_output_level;
@@ -93,9 +93,25 @@ pub struct Configuration {
     /// Name of this type of struct, used for serialization, i.e. `{"type":"configuration"}`
     pub kind: String,
 
-    /// Path to the wordlist
-    #[serde(default = "wordlist")]
-    pub wordlist: String,
+    /// Path to recon file (alternative to stdin)
+    #[serde(default)]
+    pub recon_file: String,
+
+    /// Whether to probe URLs for more context before generating wordlist
+    #[serde(default)]
+    pub probe: bool,
+
+    /// Whether to output wordlist only (no scanning)
+    #[serde(default)]
+    pub wordlist_only: bool,
+
+    /// Anthropic API key for LLM wordlist generation
+    #[serde(default)]
+    pub anthropic_key: String,
+
+    /// Generated wordlist (populated at runtime by LLM)
+    #[serde(skip)]
+    pub generated_wordlist: Vec<String>,
 
     /// Path to the config file used
     #[serde(default)]
@@ -464,7 +480,11 @@ impl Default for Configuration {
             headers: HashMap::new(),
             depth: depth(),
             threads: threads(),
-            wordlist: wordlist(),
+            recon_file: String::new(),
+            probe: false,
+            wordlist_only: false,
+            anthropic_key: std::env::var("ANTHROPIC_API_KEY").unwrap_or_default(),
+            generated_wordlist: Vec::new(),
             dont_collect: ignored_extensions(),
             backup_extensions: backup_extensions(),
             unique: false,
@@ -495,7 +515,7 @@ impl Configuration {
     /// - **auto_tune**: `false`
     /// - **auto_bail**: `false`
     /// - **save_state**: `true`
-    /// - **user_agent**: `feroxbuster/VERSION`
+    /// - **user_agent**: `feroxagent/VERSION`
     /// - **random_agent**: `false`
     /// - **insecure**: `false` (don't be insecure, i.e. don't allow invalid certs)
     /// - **extensions**: `None`
@@ -541,9 +561,9 @@ impl Configuration {
     /// built-in defaults.
     ///
     /// `ferox-config.toml` can be placed in any of the following locations (in the order shown):
-    /// - `/etc/feroxbuster/`
-    /// - `CONFIG_DIR/ferxobuster/`
-    /// - The same directory as the `feroxbuster` executable
+    /// - `/etc/feroxagent/`
+    /// - `CONFIG_DIR/feroxagent/`
+    /// - The same directory as the `feroxagent` executable
     /// - The user's current working directory
     ///
     /// If more than one valid configuration file is found, each one overwrites the values found previously.
@@ -635,22 +655,22 @@ impl Configuration {
         // actually specified in the config file
         //
         // search for a config using the following order of precedence
-        //   - /etc/feroxbuster/
-        //   - CONFIG_DIR/ferxobuster/
-        //   - same directory as feroxbuster executable
+        //   - /etc/feroxagent/
+        //   - CONFIG_DIR/feroxagent/
+        //   - same directory as feroxagent executable
         //   - current directory
 
-        // merge a config found at /etc/feroxbuster/ferox-config.toml
-        let config_file = Path::new("/etc/feroxbuster").join(DEFAULT_CONFIG_NAME);
+        // merge a config found at /etc/feroxagent/ferox-config.toml
+        let config_file = Path::new("/etc/feroxagent").join(DEFAULT_CONFIG_NAME);
         Self::parse_and_merge_config(config_file, config)?;
 
-        // merge a config found at ~/.config/feroxbuster/ferox-config.toml
+        // merge a config found at ~/.config/feroxagent/ferox-config.toml
         // config_dir() resolves to one of the following
         //   - linux: $XDG_CONFIG_HOME or $HOME/.config
         //   - macOS: $HOME/Library/Application Support
         //   - windows: {FOLDERID_RoamingAppData}
         let config_dir = dirs::config_dir().ok_or_else(|| anyhow!("Couldn't load config"))?;
-        let config_file = config_dir.join("feroxbuster").join(DEFAULT_CONFIG_NAME);
+        let config_file = config_dir.join("feroxagent").join(DEFAULT_CONFIG_NAME);
         Self::parse_and_merge_config(config_file, config)?;
 
         // merge a config found in same the directory as feroxbuster executable
@@ -686,7 +706,7 @@ impl Configuration {
             "response_size_limit",
             usize
         );
-        update_config_if_present!(&mut config.wordlist, args, "wordlist", String);
+        update_config_if_present!(&mut config.recon_file, args, "recon_file", String);
         update_config_if_present!(&mut config.output, args, "output", String);
         update_config_if_present!(&mut config.debug_log, args, "debug_log", String);
         update_config_if_present!(&mut config.resume_from, args, "resume_from", String);
@@ -1075,6 +1095,14 @@ impl Configuration {
             config.update_app = true;
         }
 
+        if came_from_cli!(args, "probe") {
+            config.probe = true;
+        }
+
+        if came_from_cli!(args, "wordlist_only") {
+            config.wordlist_only = true;
+        }
+
         if came_from_cli!(args, "unique") {
             config.unique = true;
         }
@@ -1416,7 +1444,9 @@ impl Configuration {
         update_if_not_default!(&mut conf.random_agent, new.random_agent, false);
         update_if_not_default!(&mut conf.threads, new.threads, threads());
         update_if_not_default!(&mut conf.depth, new.depth, depth());
-        update_if_not_default!(&mut conf.wordlist, new.wordlist, wordlist());
+        update_if_not_default!(&mut conf.recon_file, new.recon_file, "");
+        update_if_not_default!(&mut conf.probe, new.probe, false);
+        update_if_not_default!(&mut conf.wordlist_only, new.wordlist_only, false);
         update_if_not_default!(&mut conf.status_codes, new.status_codes, status_codes());
         // status_codes() is the default for replay_codes, if they're not provided
         update_if_not_default!(&mut conf.replay_codes, new.replay_codes, status_codes());

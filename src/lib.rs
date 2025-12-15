@@ -21,6 +21,7 @@ mod parser;
 pub mod progress;
 pub mod scan_manager;
 pub mod scanner;
+pub mod smart_wordlist;
 pub mod statistics;
 pub mod sync;
 mod traits;

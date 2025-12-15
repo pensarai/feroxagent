@@ -1,19 +1,18 @@
 [package]
-name = "feroxbuster"
-version = "2.13.1"
-authors = ["Ben 'epi' Risher (@epi052)"]
+name = "feroxagent"
+version = "0.1.0"
+authors = ["Kyle Ryan"]
 license = "MIT"
 edition = "2021"
-homepage = "https://github.com/epi052/feroxbuster"
-repository = "https://github.com/epi052/feroxbuster"
-description = "A fast, simple, recursive content discovery tool."
+description = "AI-powered content discovery tool using LLM-generated wordlists from recon data."
 categories = ["command-line-utilities"]
 keywords = [
     "pentest",
     "enumeration",
-    "url-bruteforce",
+    "ai",
     "content-discovery",
     "web",
+    "llm",
 ]
 exclude = [".github/*", "img/*", "check-coverage.sh"]
 build = "build.rs"
@@ -35,7 +34,7 @@ tokio = { version = "1.47", features = ["full"] }
 tokio-util = { version = "0.7", features = ["codec"] }
 log = "0.4"
 env_logger = "0.11"
-reqwest = { version = "0.12", features = ["socks", "native-tls-alpn"] }
+reqwest = { version = "0.12", features = ["socks", "native-tls-alpn", "json"] }
 # uses feature unification to add 'serde' to reqwest::Url
 url = { version = "2.5", features = ["serde"] }
 serde_regex = "1.1"
@@ -56,15 +55,6 @@ ctrlc = "3.4"
 anyhow = "1.0"
 leaky-bucket = "1.1"
 gaoya = "0.2"
-# 0.37+ relies on the broken version of indicatif and forces
-# the broken version to be used regardless of the version
-# specified above 
-self_update = { version = "0.40", features = [
-    "archive-tar",
-    "compression-flate2",
-    "archive-zip",
-    "compression-zip-deflate",
-] }
 
 [dev-dependencies]
 tempfile = "3.20"
@@ -80,31 +70,16 @@ panic = 'abort'
 [package.metadata.deb]
 section = "utility"
 license-file = ["LICENSE", "4"]
-conf-files = ["/etc/feroxbuster/ferox-config.toml"]
+conf-files = ["/etc/feroxagent/ferox-config.toml"]
 assets = [
     [
-        "target/release/feroxbuster",
+        "target/release/feroxagent",
         "/usr/bin/",
         "755",
     ],
     [
         "ferox-config.toml.example",
-        "/etc/feroxbuster/ferox-config.toml",
-        "644",
-    ],
-    [
-        "shell_completions/feroxbuster.bash",
-        "/usr/share/bash-completion/completions/feroxbuster.bash",
-        "644",
-    ],
-    [
-        "shell_completions/feroxbuster.fish",
-        "/usr/share/fish/completions/feroxbuster.fish",
-        "644",
-    ],
-    [
-        "shell_completions/_feroxbuster",
-        "/usr/share/zsh/vendor-completions/_feroxbuster",
+        "/etc/feroxagent/ferox-config.toml",
         "644",
     ],
 ]

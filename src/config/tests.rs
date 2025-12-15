@@ -78,7 +78,7 @@ fn setup_config_test() -> Configuration {
 /// test that all default config values meet expectations
 fn default_configuration() {
     let config = Configuration::default();
-    assert_eq!(config.wordlist, wordlist());
+    assert_eq!(config.recon_file, String::new());
     assert_eq!(config.proxy, String::new());
     assert_eq!(config.target_url, String::new());
     assert_eq!(config.time_limit, String::new());
@@ -143,9 +143,10 @@ fn default_configuration() {
 
 #[test]
 /// parse the test config and see that the value parsed is correct
-fn config_reads_wordlist() {
+fn config_reads_recon_file() {
     let config = setup_config_test();
-    assert_eq!(config.wordlist, "/some/path");
+    // recon_file is not in the test config, so it defaults to empty
+    assert_eq!(config.recon_file, String::new());
 }
 
 #[test]
@@ -593,7 +594,7 @@ fn as_json_returns_json_representation_of_configuration_with_newline() {
     let config_str = config.as_json().unwrap();
     let json: Configuration = serde_json::from_str(&config_str).unwrap();
     assert_eq!(json.config, config.config);
-    assert_eq!(json.wordlist, config.wordlist);
+    assert_eq!(json.recon_file, config.recon_file);
     assert_eq!(json.replay_codes, config.replay_codes);
     assert_eq!(json.timeout, config.timeout);
     assert_eq!(json.depth, config.depth);
