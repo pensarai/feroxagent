@@ -26,9 +26,36 @@ brew tap kylejryan/tap
 brew install feroxagent
 ```
 
+### Quick Install (curl)
+
+**macOS Apple Silicon (M1/M2/M3):**
+```bash
+curl -sL https://github.com/kylejryan/feroxagent/releases/latest/download/aarch64-macos-feroxagent.tar.gz | tar xz -C /usr/local/bin
+```
+
+**macOS Intel:**
+```bash
+curl -sL https://github.com/kylejryan/feroxagent/releases/latest/download/x86_64-macos-feroxagent.tar.gz | tar xz -C /usr/local/bin
+```
+
+**Linux x86_64:**
+```bash
+curl -sL https://github.com/kylejryan/feroxagent/releases/latest/download/x86_64-linux-feroxagent.tar.gz | tar xz -C /usr/local/bin
+```
+
+**Linux ARM64:**
+```bash
+curl -sL https://github.com/kylejryan/feroxagent/releases/latest/download/aarch64-linux-feroxagent.tar.gz | tar xz -C /usr/local/bin
+```
+
+**Windows (PowerShell):**
+```powershell
+Invoke-WebRequest -Uri https://github.com/kylejryan/feroxagent/releases/latest/download/x86_64-windows-feroxagent.zip -OutFile feroxagent.zip; Expand-Archive feroxagent.zip -DestinationPath $env:USERPROFILE\bin
+```
+
 ### Download Binary
 
-Download the latest release for your platform from [GitHub Releases](https://github.com/kylejryan/feroxagent/releases):
+Or download manually from [GitHub Releases](https://github.com/kylejryan/feroxagent/releases):
 
 | Platform | Download |
 |----------|----------|

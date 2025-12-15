@@ -55,7 +55,7 @@ pub async fn generate_wordlist(
     // Build the full analysis summary for LLM
     let mut full_summary = analysis.summary();
     if !probe_summary.is_empty() {
-        full_summary.push_str("\n");
+        full_summary.push('\n');
         full_summary.push_str(&probe_summary);
     }
 
@@ -95,7 +95,7 @@ fn read_recon_urls(recon_file: &Option<String>) -> Result<Vec<String>> {
         stdin
             .lock()
             .lines()
-            .filter_map(|line| line.ok())
+            .map_while(Result::ok)
             .map(|s| s.trim().to_string())
             .filter(|s| !s.is_empty())
             .collect()
