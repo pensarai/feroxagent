@@ -30,7 +30,7 @@ complete -c feroxbuster -l client-key -d 'Add a PEM encoded private key for mutu
 complete -c feroxbuster -s t -l threads -d 'Number of concurrent threads (default: 50)' -r
 complete -c feroxbuster -s d -l depth -d 'Maximum recursion depth, a depth of 0 is infinite recursion (default: 4)' -r
 complete -c feroxbuster -s L -l scan-limit -d 'Limit total number of concurrent scans (default: 0, i.e. no limit)' -r
-complete -c feroxbuster -l parallel -d 'Run parallel feroxbuster instances (one child process per url passed via stdin)' -r
+complete -c feroxbuster -l parallel -d 'Run parallel feroxagent instances (one child process per url passed via stdin)' -r
 complete -c feroxbuster -l rate-limit -d 'Limit number of requests per second (per directory) (default: 0, i.e. no limit)' -r
 complete -c feroxbuster -l response-size-limit -d 'Limit size of response body to read in bytes (default: 4MB)' -r
 complete -c feroxbuster -l time-limit -d 'Limit total run time of all scans (ex: --time-limit 10m)' -r
@@ -67,6 +67,6 @@ complete -c feroxbuster -l silent -d 'Only print URLs (or JSON w/ --json) + turn
 complete -c feroxbuster -s q -l quiet -d 'Hide progress bars and banner (good for tmux windows w/ notifications)'
 complete -c feroxbuster -l json -d 'Emit JSON logs to --output and --debug-log instead of normal text'
 complete -c feroxbuster -l no-state -d 'Disable state output file (*.state)'
-complete -c feroxbuster -s U -l update -d 'Update feroxbuster to the latest version'
+complete -c feroxbuster -s U -l update -d 'Update feroxagent to the latest version'
 complete -c feroxbuster -s h -l help -d 'Print help (see more with \'--help\')'
 complete -c feroxbuster -s V -l version -d 'Print version'

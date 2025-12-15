@@ -29,8 +29,8 @@ pub fn initialize(config: Arc<Configuration>) -> Result<()> {
                 0 => (),
                 1 => env::set_var("RUST_LOG", "warn"),
                 2 => env::set_var("RUST_LOG", "info"),
-                3 => env::set_var("RUST_LOG", "feroxbuster=debug,info"),
-                _ => env::set_var("RUST_LOG", "feroxbuster=trace,info"),
+                3 => env::set_var("RUST_LOG", "feroxagent=debug,info"),
+                _ => env::set_var("RUST_LOG", "feroxagent=trace,info"),
             }
         }
     }

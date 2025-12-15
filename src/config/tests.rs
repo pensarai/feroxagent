@@ -582,7 +582,7 @@ fn as_str_returns_string_with_newline() {
     assert!(config_str.ends_with("}\n"));
     assert!(config_str.contains("replay_codes:"));
     assert!(config_str.contains("client: Client {"));
-    assert!(config_str.contains("user_agent: \"feroxbuster"));
+    assert!(config_str.contains("user_agent: \"feroxagent"));
 }
 
 #[test]

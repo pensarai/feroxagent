@@ -540,7 +540,7 @@ pub fn initialize() -> Command {
                 .num_args(1)
                 .requires("stdin")
                 .help_heading("Scan settings")
-                .help("Run parallel feroxbuster instances (one child process per url passed via stdin)")
+                .help("Run parallel feroxagent instances (one child process per url passed via stdin)")
         )
         .arg(
             Arg::new("rate_limit")
@@ -745,7 +745,7 @@ pub fn initialize() -> Command {
                 .exclusive(true)
                 .num_args(0)
                 .help_heading("Update settings")
-                .help("Update feroxbuster to the latest version"),
+                .help("Update feroxagent to the latest version"),
         )
         .after_long_help(EPILOGUE);
 

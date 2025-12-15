@@ -278,10 +278,13 @@ not-a-path
 
         let wordlist = client.parse_wordlist_response(response);
 
-        assert_eq!(wordlist.len(), 5);
+        assert_eq!(wordlist.len(), 6);
         assert!(wordlist.contains(&"/api/admin".to_string()));
         assert!(wordlist.contains(&"/api/users".to_string()));
+        assert!(wordlist.contains(&"/api/v1/config".to_string()));
+        assert!(wordlist.contains(&"/debug".to_string()));
         assert!(wordlist.contains(&"/api/internal".to_string()));
+        assert!(wordlist.contains(&"/valid/path".to_string()));
         assert!(!wordlist.contains(&"not-a-path".to_string()));
     }
 }

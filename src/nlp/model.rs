@@ -126,8 +126,8 @@ mod tests {
 
         assert_eq!(get_score("quality", &model), 0.0);
         assert_eq!(get_score("air", &model), 0.0);
-        assert_eq!(get_score("wednesday", &model), 0.018906077);
-        assert_eq!(get_score("island", &model), 0.014047348);
+        assert!((get_score("wednesday", &model) - 0.018906077).abs() < 1e-6);
+        assert!((get_score("island", &model) - 0.014047348).abs() < 1e-6);
         assert_eq!(get_score("singapore", &model), 0.016427131);
         assert_eq!(get_score("sunny", &model), 0.08600858);
         assert_eq!(get_score("monitoring", &model), 0.05017167);

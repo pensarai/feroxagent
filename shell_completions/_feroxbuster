@@ -67,7 +67,7 @@ _feroxbuster() {
 '--depth=[Maximum recursion depth, a depth of 0 is infinite recursion (default\: 4)]:RECURSION_DEPTH:_default' \
 '-L+[Limit total number of concurrent scans (default\: 0, i.e. no limit)]:SCAN_LIMIT:_default' \
 '--scan-limit=[Limit total number of concurrent scans (default\: 0, i.e. no limit)]:SCAN_LIMIT:_default' \
-'(-v --verbosity -u --url)--parallel=[Run parallel feroxbuster instances (one child process per url passed via stdin)]:PARALLEL_SCANS:_default' \
+'(-v --verbosity -u --url)--parallel=[Run parallel feroxagent instances (one child process per url passed via stdin)]:PARALLEL_SCANS:_default' \
 '--rate-limit=[Limit number of requests per second (per directory) (default\: 0, i.e. no limit)]:RATE_LIMIT:_default' \
 '--response-size-limit=[Limit size of response body to read in bytes (default\: 4MB)]:BYTES:_default' \
 '--time-limit=[Limit total run time of all scans (ex\: --time-limit 10m)]:TIME_SPEC:_default' \
@@ -118,8 +118,8 @@ _feroxbuster() {
 '--quiet[Hide progress bars and banner (good for tmux windows w/ notifications)]' \
 '--json[Emit JSON logs to --output and --debug-log instead of normal text]' \
 '--no-state[Disable state output file (*.state)]' \
-'-U[Update feroxbuster to the latest version]' \
-'--update[Update feroxbuster to the latest version]' \
+'-U[Update feroxagent to the latest version]' \
+'--update[Update feroxagent to the latest version]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
 '-V[Print version]' \

@@ -19,7 +19,7 @@ use tokio::sync::{Semaphore, SemaphorePermit};
 /// # Example
 ///
 /// ```rust,no_run
-/// use feroxbuster::sync::DynamicSemaphore;
+/// use feroxagent::sync::DynamicSemaphore;
 ///
 /// #[tokio::main]
 /// async fn main() {
@@ -90,7 +90,7 @@ impl DynamicSemaphore {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use feroxbuster::sync::DynamicSemaphore;
+    /// use feroxagent::sync::DynamicSemaphore;
     ///
     /// let semaphore = DynamicSemaphore::new(10);
     /// assert_eq!(semaphore.current_capacity(), 10);
@@ -116,7 +116,7 @@ impl DynamicSemaphore {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use feroxbuster::sync::DynamicSemaphore;
+    /// use feroxagent::sync::DynamicSemaphore;
     ///
     /// #[tokio::main]
     /// async fn main() {
@@ -175,7 +175,7 @@ impl DynamicSemaphore {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use feroxbuster::sync::DynamicSemaphore;
+    /// use feroxagent::sync::DynamicSemaphore;
     /// use tokio::sync::TryAcquireError;
     ///
     /// let semaphore = DynamicSemaphore::new(1);
@@ -239,7 +239,7 @@ impl DynamicSemaphore {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use feroxbuster::sync::DynamicSemaphore;
+    /// use feroxagent::sync::DynamicSemaphore;
     ///
     /// #[tokio::main]
     /// async fn main() {
@@ -289,7 +289,7 @@ impl DynamicSemaphore {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use feroxbuster::sync::DynamicSemaphore;
+    /// use feroxagent::sync::DynamicSemaphore;
     ///
     /// #[tokio::main]
     /// async fn main() {
@@ -321,7 +321,7 @@ impl DynamicSemaphore {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use feroxbuster::sync::DynamicSemaphore;
+    /// use feroxagent::sync::DynamicSemaphore;
     ///
     /// let semaphore = DynamicSemaphore::new(10);
     /// assert_eq!(semaphore.current_capacity(), 10);
@@ -338,7 +338,7 @@ impl DynamicSemaphore {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use feroxbuster::sync::DynamicSemaphore;
+    /// use feroxagent::sync::DynamicSemaphore;
     ///
     /// #[tokio::main]
     /// async fn main() {
@@ -362,7 +362,7 @@ impl DynamicSemaphore {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use feroxbuster::sync::DynamicSemaphore;
+    /// use feroxagent::sync::DynamicSemaphore;
     ///
     /// #[tokio::main]
     /// async fn main() {
@@ -382,7 +382,7 @@ impl DynamicSemaphore {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use feroxbuster::sync::DynamicSemaphore;
+    /// use feroxagent::sync::DynamicSemaphore;
     ///
     /// let semaphore = DynamicSemaphore::new(1);
     /// assert!(!semaphore.is_closed());
@@ -402,7 +402,7 @@ impl DynamicSemaphore {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use feroxbuster::sync::DynamicSemaphore;
+    /// use feroxagent::sync::DynamicSemaphore;
     ///
     /// #[tokio::main]
     /// async fn main() {
