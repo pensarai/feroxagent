@@ -718,55 +718,6 @@ pub async fn fingerprint_wildcard_prefix(
     }
 }
 
-/// Check if a path matches a wildcard fingerprint
-pub async fn matches_wildcard(
-    path: &str,
-    base_url: &str,
-    fingerprint: &WildcardFingerprint,
-    client: &Client,
-) -> bool {
-    // Only check paths under this prefix
-    if !path.starts_with(&fingerprint.prefix) {
-        return false;
-    }
-
-    let timeout = Duration::from_secs(5);
-    let url = format!("{}{}", base_url.trim_end_matches('/'), path);
-
-    // Check GET fingerprint
-    if let Some(ref canary_fp) = fingerprint.get_fingerprint {
-        if let Ok(resp) = client.get(&url).timeout(timeout).send().await {
-            let status = resp.status().as_u16();
-            let content_type = resp
-                .headers()
-                .get("content-type")
-                .and_then(|v| v.to_str().ok())
-                .map(|s| s.to_string());
-            let content_length = resp
-                .headers()
-                .get("content-length")
-                .and_then(|v| v.to_str().ok())
-                .and_then(|s| s.parse().ok());
-            let body = resp.bytes().await.unwrap_or_default();
-            let body_hash = hash_body(&body, 1024);
-
-            let test_fp = ResponseFingerprint {
-                status,
-                content_type,
-                content_length,
-                body_hash,
-                allow_header: None,
-            };
-
-            if canary_fp.matches(&test_fp) {
-                return true;
-            }
-        }
-    }
-
-    false
-}
-
 /// Fingerprint multiple API prefixes that might have wildcard behavior
 pub async fn fingerprint_api_prefixes(
     base_url: &str,

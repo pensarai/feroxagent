@@ -1240,8 +1240,6 @@ fn templatize_path(url: &str) -> String {
         } else {
             "/"
         }
-    } else if url.starts_with('/') {
-        url
     } else {
         url
     };
@@ -1455,7 +1453,7 @@ fn extract_last_segment(url: &str) -> Option<String> {
     // Get last segment
     path.split('/')
         .filter(|s| !s.is_empty())
-        .last()
+        .next_back()
         .map(|s| s.to_string())
 }
 
@@ -1519,7 +1517,11 @@ pub fn generate_canonical_inventory_with_wildcards(
             if pattern.starts_with(prefix) && pattern.len() > prefix.len() {
                 let suffix = &pattern[prefix.len()..];
                 // Get the first segment after the prefix
-                let first_seg = suffix.trim_start_matches('/').split('/').next().unwrap_or("");
+                let first_seg = suffix
+                    .trim_start_matches('/')
+                    .split('/')
+                    .next()
+                    .unwrap_or("");
 
                 // If it's a fixed segment (not {id}, {uuid}, etc.), it's a fixed child
                 if is_fixed_child(first_seg) && !first_seg.is_empty() {
@@ -1538,7 +1540,11 @@ pub fn generate_canonical_inventory_with_wildcards(
         let is_catch_all = wildcard_prefixes.iter().any(|prefix| {
             if pattern.starts_with(prefix) && pattern.len() > prefix.len() {
                 let suffix = &pattern[prefix.len()..];
-                let first_seg = suffix.trim_start_matches('/').split('/').next().unwrap_or("");
+                let first_seg = suffix
+                    .trim_start_matches('/')
+                    .split('/')
+                    .next()
+                    .unwrap_or("");
                 // It's a catch-all if the first segment is a template like {id}
                 first_seg.starts_with('{') && first_seg.ends_with('}')
             } else {
@@ -1727,7 +1733,7 @@ mod tests {
 
     #[test]
     fn test_consolidate_routes() {
-        let endpoints = vec![
+        let endpoints = [
             DiscoveredEndpoint {
                 url: "http://localhost/api/products/1".to_string(),
                 status_code: 405,
