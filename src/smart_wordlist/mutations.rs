@@ -254,26 +254,9 @@ const CRUD_SUFFIXES: &[&str] = &[
 ];
 
 /// Common ID values to test for parameterized endpoints
-const COMMON_IDS: &[&str] = &[
-    "1",
-    "2",
-    "0",
-    "100",
-    "999",
-    "1000",
-    "-1",
-    "admin",
-    "test",
-    "guest",
-    "user",
-    "root",
-    "default",
-    "null",
-    "undefined",
-    "current",
-    "me",
-    "self",
-];
+/// NOTE: Only numeric values - string values like "admin", "user" etc. cause false positives
+/// where /api/admin/users becomes /api/{id}/users incorrectly
+const COMMON_IDS: &[&str] = &["1", "2", "0", "100", "999", "1000", "-1"];
 
 /// Common UUID patterns to test
 const COMMON_UUIDS: &[&str] = &[
@@ -831,10 +814,7 @@ fn detect_api_prefixes(discovered_paths: &[String], api_endpoints: &[String]) ->
         }
 
         // Match /vN/ pattern at root
-        if path.starts_with("/v1/")
-            || path.starts_with("/v2/")
-            || path.starts_with("/v3/")
-        {
+        if path.starts_with("/v1/") || path.starts_with("/v2/") || path.starts_with("/v3/") {
             prefixes.insert(path[..3].to_string());
         }
     }
@@ -1067,12 +1047,7 @@ fn get_related_resources(resource: &str) -> Option<Vec<&'static str>> {
             "wishlist",
         ]),
         "orders" | "order" => Some(vec![
-            "products",
-            "payments",
-            "shipping",
-            "invoices",
-            "refunds",
-            "cart",
+            "products", "payments", "shipping", "invoices", "refunds", "cart",
         ]),
         "posts" | "post" => Some(vec![
             "comments",
@@ -1111,17 +1086,13 @@ pub fn expand_parameterized_paths(paths: Vec<String>) -> Vec<String> {
         if path.contains("{id}") || path.contains("{{id}}") {
             // Add numeric IDs
             for id in COMMON_IDS {
-                let expanded_path = path
-                    .replace("{{id}}", id)
-                    .replace("{id}", id);
+                let expanded_path = path.replace("{{id}}", id).replace("{id}", id);
                 expanded.insert(expanded_path);
             }
 
             // Add UUIDs
             for uuid in COMMON_UUIDS {
-                let expanded_path = path
-                    .replace("{{id}}", uuid)
-                    .replace("{id}", uuid);
+                let expanded_path = path.replace("{{id}}", uuid).replace("{id}", uuid);
                 expanded.insert(expanded_path);
             }
 
@@ -1195,17 +1166,16 @@ mod tests {
 
     #[test]
     fn test_expand_parameterized_paths() {
-        let paths = vec![
-            "/api/products/{id}".to_string(),
-            "/api/users".to_string(),
-        ];
+        let paths = vec!["/api/products/{id}".to_string(), "/api/users".to_string()];
         let expanded = expand_parameterized_paths(paths);
 
         assert!(expanded.contains(&"/api/products/1".to_string()));
-        assert!(expanded.contains(&"/api/products/admin".to_string()));
+        assert!(expanded.contains(&"/api/products/100".to_string()));
         assert!(expanded.contains(&"/api/users".to_string()));
         // Base path should be included
         assert!(expanded.contains(&"/api/products".to_string()));
+        // Should NOT contain string values that cause false positives
+        assert!(!expanded.contains(&"/api/products/admin".to_string()));
     }
 
     #[test]

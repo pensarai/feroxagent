@@ -1410,7 +1410,11 @@ impl Configuration {
             new.filter_status,
             Vec::<u16>::new()
         );
-        update_if_not_default!(&mut conf.dont_filter, new.dont_filter, dont_filter_default());
+        update_if_not_default!(
+            &mut conf.dont_filter,
+            new.dont_filter,
+            dont_filter_default()
+        );
         update_if_not_default!(&mut conf.scan_dir_listings, new.scan_dir_listings, false);
         update_if_not_default!(&mut conf.scan_limit, new.scan_limit, 0);
         update_if_not_default!(&mut conf.parallel, new.parallel, 0);

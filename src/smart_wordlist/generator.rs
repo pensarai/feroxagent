@@ -31,15 +31,16 @@ pub async fn generate_wordlist(
     config: GeneratorConfig,
     http_client: &Client,
 ) -> Result<GenerationResult> {
-    // Read recon URLs
-    let recon_urls = read_recon_urls(&config.recon_file)?;
+    // Read recon URLs and filter out noise (node_modules, static assets, etc.)
+    let raw_recon_urls = read_recon_urls(&config.recon_file)?;
+    let recon_urls = filter_recon_urls(raw_recon_urls);
 
     if recon_urls.is_empty() {
-        log::warn!("No recon URLs provided. Generating generic wordlist based on target only.");
+        log::warn!("No recon URLs provided (or all filtered as noise). Generating generic wordlist based on target only.");
     }
 
     // Analyze URLs to detect technologies
-    log::info!("Analyzing {} recon URLs...", recon_urls.len());
+    log::info!("Analyzing {} filtered recon URLs...", recon_urls.len());
     let analysis = analyze_urls(&recon_urls);
 
     // Log detected technologies
@@ -128,6 +129,69 @@ fn read_recon_urls(recon_file: &Option<String>) -> Result<Vec<String>> {
     Ok(lines)
 }
 
+/// Filter out noise from recon URLs (node_modules, static assets, framework internals)
+fn filter_recon_urls(urls: Vec<String>) -> Vec<String> {
+    let original_count = urls.len();
+    let filtered: Vec<String> = urls
+        .into_iter()
+        .filter(|url| !is_recon_noise(url))
+        .collect();
+
+    let removed = original_count - filtered.len();
+    if removed > 0 {
+        log::info!(
+            "Filtered recon URLs: {} → {} ({} noise URLs removed)",
+            original_count,
+            filtered.len(),
+            removed
+        );
+    }
+
+    filtered
+}
+
+/// Check if a recon URL is noise that should be filtered out
+fn is_recon_noise(url: &str) -> bool {
+    let url_lower = url.to_lowercase();
+
+    // Framework internals
+    let framework_noise = [
+        "/node_modules/",
+        "/_next/static/chunks/",
+        "/dist/compiled/",
+        "/dist/client/",
+        "/dist/server/",
+        "/dist/build/",
+        "/ext/static/chunks/",
+        "/cjs/",
+        "/esm/",
+        "webpack-hmr",
+        ".development.js",
+        ".production.js",
+        "/turbopack",
+        "/.pnpm/",
+    ];
+
+    // Static file extensions - these are never API endpoints
+    let static_extensions = [
+        ".js", ".ts", ".jsx", ".tsx", ".css", ".scss", ".less", ".map", ".woff", ".woff2", ".ttf",
+        ".eot", ".otf", ".png", ".jpg", ".jpeg", ".gif", ".svg", ".ico", ".webp", ".mp4", ".webm",
+        ".mp3", ".wav", ".d.ts",
+    ];
+
+    // Check framework noise patterns
+    if framework_noise.iter().any(|p| url_lower.contains(p)) {
+        return true;
+    }
+
+    // Check static file extensions
+    if static_extensions.iter().any(|ext| url_lower.ends_with(ext)) {
+        return true;
+    }
+
+    false
+}
+
 /// Combine LLM-generated wordlist with paths extracted during analysis and mutations
 fn combine_wordlists(analysis: &TechAnalysis, llm_wordlist: Vec<String>) -> Vec<String> {
     let mut combined: HashSet<String> = HashSet::new();
@@ -161,9 +225,13 @@ fn combine_wordlists(analysis: &TechAnalysis, llm_wordlist: Vec<String>) -> Vec<
     // Generate comprehensive mutations based on discovered patterns
     let discovered_paths: Vec<String> = analysis.paths.iter().cloned().collect();
     let mutation_config = MutationConfig::default();
-    let mutations = generate_mutations(&discovered_paths, &analysis.api_endpoints, &mutation_config);
+    let mutations =
+        generate_mutations(&discovered_paths, &analysis.api_endpoints, &mutation_config);
 
-    log::info!("Mutation engine generated {} additional paths", mutations.len());
+    log::info!(
+        "Mutation engine generated {} additional paths",
+        mutations.len()
+    );
 
     for mutation in mutations {
         combined.insert(mutation);

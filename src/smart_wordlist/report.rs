@@ -298,60 +298,159 @@ impl PentestReport {
             output.push_str("───────────────────────────────────────────────────────────────────────────────────\n");
         }
 
-        // ATTACK SURFACE - all non-noise endpoints worth pentesting
-        let attack_surface: Vec<_> = self
+        // DISCOVERED ROUTES - filter to only routes that EXIST
+        // 404 = doesn't exist, all other status codes = route exists
+        let existing_routes: Vec<_> = self
             .discovered_endpoints
             .iter()
-            .filter(|e| e.pentest_score >= 0)
+            .filter(|e| is_existence_signal(e.status_code))
+            .filter(|e| !is_framework_junk(&e.url))
             .collect();
 
-        if !attack_surface.is_empty() {
-            output.push_str(&format!(
-                " 🎯  {}\n",
-                style("Attack Surface").bright().white()
-            ));
-            output.push_str("───────────────────────────────────────────────────────────────────────────────────\n");
+        // Consolidate parameterized routes (collapse /api/products/1,2,3 -> /api/products/{id})
+        let consolidated = consolidate_routes(&existing_routes);
 
-            for endpoint in &attack_surface {
-                // Color-code status by response type (matching feroxbuster's status_colorizer)
-                let colored_status = colorize_status_code(endpoint.status_code);
-                let size_str = format!("{}c", endpoint.content_length);
+        // Categorize by status meaning
+        let categories = categorize_routes(consolidated);
 
-                // Show parameterized pattern if detected
-                let url_display = if endpoint.is_parameterized {
-                    if let Some(ref pattern) = endpoint.param_pattern {
-                        format!(
-                            "{} {}",
-                            endpoint.url,
-                            style(format!("→ {}", pattern)).cyan()
-                        )
-                    } else {
-                        endpoint.url.clone()
-                    }
-                } else {
-                    endpoint.url.clone()
-                };
+        // Helper to format a route line
+        let format_route = |route: &ConsolidatedRoute| -> String {
+            let colored_status = colorize_status_code(route.status_code);
+            let size_str = if route.content_length > 0 {
+                format!("{}c", route.content_length)
+            } else {
+                String::new()
+            };
 
-                output.push_str(&format!(
+            if route.variant_count > 1 {
+                format!(
+                    "{:<7} {:>9} {}  {}\n",
+                    colored_status,
+                    style(size_str).dim(),
+                    style(&route.pattern).cyan(),
+                    style(format!("({} variants)", route.variant_count)).dim()
+                )
+            } else {
+                format!(
                     "{:<7} {:>9} {}\n",
                     colored_status,
                     style(size_str).dim(),
-                    url_display
-                ));
+                    route.example_url
+                )
             }
+        };
 
+        // Confirmed Routes (2xx)
+        if !categories.confirmed.is_empty() {
+            output.push_str(&format!(
+                " ✅  {}\n",
+                style("Confirmed Routes").bright().white()
+            ));
+            output.push_str("───────────────────────────────────────────────────────────────────────────────────\n");
+            for route in &categories.confirmed {
+                output.push_str(&format_route(route));
+            }
+            output.push_str("───────────────────────────────────────────────────────────────────────────────────\n");
+        }
+
+        // Auth Required (401, 403)
+        if !categories.auth_required.is_empty() {
+            output.push_str(&format!(
+                " 🔐  {}\n",
+                style("Auth Required").bright().white()
+            ));
+            output.push_str("───────────────────────────────────────────────────────────────────────────────────\n");
+            for route in &categories.auth_required {
+                output.push_str(&format_route(route));
+            }
+            output.push_str("───────────────────────────────────────────────────────────────────────────────────\n");
+        }
+
+        // Method Mismatch (405)
+        if !categories.method_mismatch.is_empty() {
+            output.push_str(&format!(
+                " ⚡  {} {}\n",
+                style("Method Mismatch").bright().white(),
+                style("(route exists, try different HTTP methods)").dim()
+            ));
+            output.push_str("───────────────────────────────────────────────────────────────────────────────────\n");
+            for route in &categories.method_mismatch {
+                output.push_str(&format_route(route));
+            }
+            output.push_str("───────────────────────────────────────────────────────────────────────────────────\n");
+        }
+
+        // Server Errors (5xx)
+        if !categories.server_error.is_empty() {
+            output.push_str(&format!(
+                " 💥  {} {}\n",
+                style("Server Errors").bright().white(),
+                style("(potential vulnerabilities)").dim()
+            ));
+            output.push_str("───────────────────────────────────────────────────────────────────────────────────\n");
+            for route in &categories.server_error {
+                output.push_str(&format_route(route));
+            }
+            output.push_str("───────────────────────────────────────────────────────────────────────────────────\n");
+        }
+
+        // Redirects (3xx) - only show if interesting
+        let interesting_redirects: Vec<_> = categories
+            .redirects
+            .iter()
+            .filter(|r| {
+                // Only show redirects to interesting paths (admin, api, internal)
+                r.pattern.contains("/admin")
+                    || r.pattern.contains("/api")
+                    || r.pattern.contains("/internal")
+                    || r.pattern.contains("/private")
+            })
+            .collect();
+        if !interesting_redirects.is_empty() {
+            output.push_str(&format!(" ↪️   {}\n", style("Redirects").bright().white()));
+            output.push_str("───────────────────────────────────────────────────────────────────────────────────\n");
+            for route in interesting_redirects {
+                output.push_str(&format_route(route));
+            }
+            output.push_str("───────────────────────────────────────────────────────────────────────────────────\n");
+        }
+
+        // Other (400 etc.) - potential input surfaces
+        if !categories.other.is_empty() {
+            output.push_str(&format!(
+                " 🔍  {} {}\n",
+                style("Input Surfaces").bright().white(),
+                style("(400 = expects parameters)").dim()
+            ));
+            output.push_str("───────────────────────────────────────────────────────────────────────────────────\n");
+            for route in &categories.other {
+                output.push_str(&format_route(route));
+            }
             output.push_str("───────────────────────────────────────────────────────────────────────────────────\n");
         }
 
         // Original recon URLs from katana/gospider/etc
+        // Filter out noise before displaying
         if !self.recon_urls.is_empty() {
+            let display_recon: Vec<_> = self
+                .recon_urls
+                .iter()
+                .filter(|url| !is_recon_display_noise(url))
+                .take(50) // Limit to 50 most relevant
+                .collect();
+
+            let filtered_count = self.recon_urls.len() - display_recon.len();
+            let showing_count = display_recon.len();
+
             output.push_str(&format!(
-                " 📡  {}\n",
-                style("Recon URLs (from katana/gospider)").bright().white()
+                " 📡  {} ({} shown, {} filtered)\n",
+                style("Recon URLs").bright().white(),
+                showing_count,
+                filtered_count
             ));
             output.push_str("───────────────────────────────────────────────────────────────────────────────────\n");
 
-            for url in &self.recon_urls {
+            for url in display_recon {
                 output.push_str(&format!("     {}\n", style(url).dim()));
             }
 
@@ -634,6 +733,14 @@ fn is_dev_or_internal(url: &str) -> bool {
         "/console",
         "/elmah",
         "/error_log",
+        // Version control exposure - extremely sensitive
+        "/.git",
+        "/.svn",
+        "/.hg",
+        // Environment/secrets exposure
+        "/.env",
+        "/config.json",
+        "/secrets",
     ];
 
     dev_patterns.iter().any(|p| url.contains(p))
@@ -664,6 +771,18 @@ fn get_dev_internal_note(url: &str) -> String {
     }
     if url.contains("/phpinfo") || url.contains("/info.php") {
         return "PHP info - exposes full server config".to_string();
+    }
+    if url.contains("/.git") {
+        return "Git exposure - dump with git-dumper for source code".to_string();
+    }
+    if url.contains("/.svn") || url.contains("/.hg") {
+        return "Version control exposure - may leak source code".to_string();
+    }
+    if url.contains("/.env") {
+        return "Environment file - likely contains secrets/credentials".to_string();
+    }
+    if url.contains("/config.json") || url.contains("/secrets") {
+        return "Config/secrets file - may contain credentials".to_string();
     }
     "Dev/internal endpoint exposed in production".to_string()
 }
@@ -738,23 +857,116 @@ pub fn output_report(report: &PentestReport) {
 // PARAMETERIZED ENDPOINT DETECTION
 // =============================================================================
 
-/// Common ID values used in mutation testing that indicate parameterized endpoints
-const PARAM_ID_VALUES: &[&str] = &[
-    "1", "2", "0", "100", "999", "1000", "-1",
-    "admin", "test", "guest", "user", "root", "default",
-    "null", "undefined", "current", "me", "self",
-];
+/// Numeric ID values used in mutation testing that indicate parameterized endpoints
+/// NOTE: Only numeric values - string values like "admin", "test" caused false positives
+const PARAM_ID_VALUES: &[&str] = &["1", "2", "0", "100", "999", "1000", "-1"];
 
-/// UUID patterns
+/// UUID patterns used in testing
 const UUID_PATTERNS: &[&str] = &[
     "00000000-0000-0000-0000-000000000000",
     "00000000-0000-0000-0000-000000000001",
     "ffffffff-ffff-ffff-ffff-ffffffffffff",
 ];
 
+/// Known API resource/route names that should NOT be treated as IDs
+/// These are legitimate URL path segments, not parameterized values
+const KNOWN_RESOURCE_NAMES: &[&str] = &[
+    // API structure
+    "api",
+    "v1",
+    "v2",
+    "v3",
+    "internal",
+    "external",
+    "public",
+    "private",
+    // Auth
+    "admin",
+    "auth",
+    "login",
+    "logout",
+    "register",
+    "signup",
+    "signin",
+    "signout",
+    "session",
+    "sessions",
+    "token",
+    "tokens",
+    "oauth",
+    "oauth2",
+    "sso",
+    "callback",
+    "me",
+    "self",
+    "current",
+    "profile",
+    // Resources
+    "users",
+    "user",
+    "products",
+    "product",
+    "orders",
+    "order",
+    "items",
+    "item",
+    "reviews",
+    "review",
+    "comments",
+    "comment",
+    "categories",
+    "category",
+    "cart",
+    "carts",
+    "checkout",
+    "payments",
+    "payment",
+    // Operations
+    "search",
+    "filter",
+    "find",
+    "list",
+    "all",
+    "new",
+    "create",
+    "edit",
+    "update",
+    "delete",
+    "export",
+    "import",
+    "bulk",
+    "batch",
+    "count",
+    // System
+    "health",
+    "healthz",
+    "status",
+    "config",
+    "settings",
+    "debug",
+    "metrics",
+    "diagnostics",
+    "logs",
+    "audit",
+    // Next.js / Framework
+    "app",
+    "image",
+    "_next",
+    "static",
+    "chunks",
+    "server",
+];
+
 /// Detect if a URL segment looks like an ID parameter
 fn looks_like_id_segment(segment: &str) -> Option<&'static str> {
-    // Check for common test IDs
+    let segment_lower = segment.to_lowercase();
+
+    // First, exclude known resource names - these are NOT IDs
+    if KNOWN_RESOURCE_NAMES.contains(&segment_lower.as_str()) {
+        return None;
+    }
+
+    // Check for common numeric test IDs
     if PARAM_ID_VALUES.contains(&segment) {
         return Some("{id}");
     }
@@ -778,7 +990,9 @@ fn looks_like_id_segment(segment: &str) -> Option<&'static str> {
             && parts[2].len() == 4
             && parts[3].len() == 4
             && parts[4].len() == 12
-            && parts.iter().all(|p| p.chars().all(|c| c.is_ascii_hexdigit()))
+            && parts
+                .iter()
+                .all(|p| p.chars().all(|c| c.is_ascii_hexdigit()))
         {
             return Some("{uuid}");
         }
@@ -844,6 +1058,220 @@ pub fn detect_parameterized_endpoint(url: &str) -> (bool, Option<String>) {
     }
 }
 
+// =============================================================================
+// ROUTE EXISTENCE & CONSOLIDATION
+// =============================================================================
+
+/// Check if a status code indicates the route EXISTS (not just 200)
+/// 404 = route does NOT exist, everything else = route exists
+fn is_existence_signal(status: u16) -> bool {
+    matches!(
+        status,
+        200..=204 | 301 | 302 | 307 | 308 | 400 | 401 | 403 | 405 | 500 | 502 | 503
+    )
+}
+
+/// Check if URL is framework junk that should never appear in output
+fn is_framework_junk(url: &str) -> bool {
+    let junk_patterns = [
+        "/_next/static/",
+        "/node_modules/",
+        "/chunks/",
+        "/.next/",
+        "/turbopack",
+        "/favicon.ico",
+        ".development.js",
+        ".production.js",
+        "/layout.tsx",
+        "/_not-found",
+        "/image/x-icon",
+    ];
+    let url_lower = url.to_lowercase();
+    junk_patterns.iter().any(|p| url_lower.contains(p))
+}
+
+/// A consolidated route that groups parameterized variants
+#[derive(Debug, Clone)]
+struct ConsolidatedRoute {
+    /// The templated pattern (e.g., "/api/products/{id}")
+    pattern: String,
+    /// Representative status code
+    status_code: u16,
+    /// Representative content length
+    content_length: u64,
+    /// How many concrete URLs matched this pattern
+    variant_count: usize,
+    /// One concrete example URL
+    example_url: String,
+}
+
+/// Templatize a URL path - replace ID-like segments with placeholders
+fn templatize_path(url: &str) -> String {
+    // Extract just the path portion
+    let path = if let Some(idx) = url.find("://") {
+        let after_scheme = &url[idx + 3..];
+        if let Some(path_idx) = after_scheme.find('/') {
+            &after_scheme[path_idx..]
+        } else {
+            "/"
+        }
+    } else if url.starts_with('/') {
+        url
+    } else {
+        url
+    };
+
+    // Remove query string
+    let path = path.split('?').next().unwrap_or(path);
+
+    // Split and templatize segments
+    let segments: Vec<&str> = path.split('/').collect();
+    let templated: Vec<String> = segments
+        .iter()
+        .map(|seg| {
+            if seg.is_empty() {
+                String::new()
+            } else if seg.parse::<i64>().is_ok() {
+                "{id}".to_string()
+            } else if is_uuid_segment(seg) {
+                "{uuid}".to_string()
+            } else if is_objectid_segment(seg) {
+                "{objectId}".to_string()
+            } else {
+                (*seg).to_string()
+            }
+        })
+        .collect();
+
+    templated.join("/")
+}
+
+fn is_uuid_segment(seg: &str) -> bool {
+    if seg.len() != 36 {
+        return false;
+    }
+    let parts: Vec<&str> = seg.split('-').collect();
+    parts.len() == 5
+        && parts[0].len() == 8
+        && parts[1].len() == 4
+        && parts[2].len() == 4
+        && parts[3].len() == 4
+        && parts[4].len() == 12
+        && parts
+            .iter()
+            .all(|p| p.chars().all(|c| c.is_ascii_hexdigit()))
+}
+
+fn is_objectid_segment(seg: &str) -> bool {
+    seg.len() == 24 && seg.chars().all(|c| c.is_ascii_hexdigit())
+}
+
+/// Consolidate endpoints by their templated pattern
+fn consolidate_routes(endpoints: &[&DiscoveredEndpoint]) -> Vec<ConsolidatedRoute> {
+    let mut by_pattern: HashMap<(String, u16), Vec<&DiscoveredEndpoint>> = HashMap::new();
+
+    for ep in endpoints {
+        let pattern = templatize_path(&ep.url);
+        // Group by pattern AND status code
+        let key = (pattern, ep.status_code);
+        by_pattern.entry(key).or_default().push(ep);
+    }
+
+    let mut result: Vec<ConsolidatedRoute> = by_pattern
+        .into_iter()
+        .map(|((pattern, status_code), eps)| ConsolidatedRoute {
+            pattern,
+            status_code,
+            content_length: eps[0].content_length,
+            variant_count: eps.len(),
+            example_url: eps[0].url.clone(),
+        })
+        .collect();
+
+    // Sort by status code, then by pattern
+    result.sort_by(|a, b| {
+        a.status_code
+            .cmp(&b.status_code)
+            .then_with(|| a.pattern.cmp(&b.pattern))
+    });
+
+    result
+}
+
+/// Categorize routes by their status meaning
+#[derive(Default)]
+struct CategorizedRoutes {
+    confirmed: Vec<ConsolidatedRoute>,       // 2xx
+    auth_required: Vec<ConsolidatedRoute>,   // 401, 403
+    method_mismatch: Vec<ConsolidatedRoute>, // 405
+    server_error: Vec<ConsolidatedRoute>,    // 5xx
+    redirects: Vec<ConsolidatedRoute>,       // 3xx
+    other: Vec<ConsolidatedRoute>,           // 400, etc.
+}
+
+fn categorize_routes(routes: Vec<ConsolidatedRoute>) -> CategorizedRoutes {
+    let mut cat = CategorizedRoutes::default();
+
+    for route in routes {
+        match route.status_code {
+            200..=204 => cat.confirmed.push(route),
+            301 | 302 | 307 | 308 => cat.redirects.push(route),
+            401 | 403 => cat.auth_required.push(route),
+            405 => cat.method_mismatch.push(route),
+            500..=599 => cat.server_error.push(route),
+            _ => cat.other.push(route),
+        }
+    }
+
+    cat
+}
+
+// =============================================================================
+// RECON DISPLAY FILTERING
+// =============================================================================
+
+/// Check if a recon URL is noise that shouldn't be displayed
+fn is_recon_display_noise(url: &str) -> bool {
+    let url_lower = url.to_lowercase();
+
+    // Framework internals - never useful for pentesting
+    let framework_noise = [
+        "/node_modules/",
+        "/_next/static/chunks/",
+        "/dist/compiled/",
+        "/dist/client/",
+        "/dist/server/",
+        "/dist/build/",
+        "/ext/static/chunks/",
+        "/cjs/",
+        "/esm/",
+        "webpack-hmr",
+        ".development.js",
+        ".production.js",
+        "/turbopack",
+        "/.pnpm/",
+    ];
+
+    // Static file extensions - not API endpoints
+    let static_extensions = [
+        ".js", ".ts", ".jsx", ".tsx", ".css", ".scss", ".less", ".map", ".woff", ".woff2", ".ttf",
+        ".eot", ".otf", ".png", ".jpg", ".jpeg", ".gif", ".svg", ".ico", ".webp", ".mp4", ".webm",
+        ".mp3", ".wav", ".d.ts",
+    ];
+
+    // Check framework noise patterns
+    if framework_noise.iter().any(|p| url_lower.contains(p)) {
+        return true;
+    }
+
+    // Check static file extensions
+    if static_extensions.iter().any(|ext| url_lower.ends_with(ext)) {
+        return true;
+    }
+
+    false
+}
+
 /// Colorize status code matching feroxbuster's style
 fn colorize_status_code(code: u16) -> String {
     let code_str = code.to_string();
@@ -860,6 +1288,100 @@ fn colorize_status_code(code: u16) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_templatize_path() {
+        // Numeric IDs become {id}
+        assert_eq!(templatize_path("/api/products/1"), "/api/products/{id}");
+        assert_eq!(templatize_path("/api/products/123"), "/api/products/{id}");
+        assert_eq!(
+            templatize_path("http://localhost:3000/api/users/42"),
+            "/api/users/{id}"
+        );
+
+        // UUIDs become {uuid}
+        assert_eq!(
+            templatize_path("/api/items/00000000-0000-0000-0000-000000000001"),
+            "/api/items/{uuid}"
+        );
+
+        // Non-parameterized paths stay the same
+        assert_eq!(templatize_path("/api/products"), "/api/products");
+        assert_eq!(templatize_path("/api/admin/users"), "/api/admin/users");
+    }
+
+    #[test]
+    fn test_is_existence_signal() {
+        // 404 is NOT an existence signal
+        assert!(!is_existence_signal(404));
+
+        // These indicate route exists
+        assert!(is_existence_signal(200));
+        assert!(is_existence_signal(201));
+        assert!(is_existence_signal(401));
+        assert!(is_existence_signal(403));
+        assert!(is_existence_signal(405));
+        assert!(is_existence_signal(500));
+        assert!(is_existence_signal(308));
+    }
+
+    #[test]
+    fn test_is_framework_junk() {
+        assert!(is_framework_junk("/_next/static/chunks/main.js"));
+        assert!(is_framework_junk("/node_modules/react/index.js"));
+        assert!(is_framework_junk(
+            "/api/debug/auth/_next/static/chunks/something"
+        ));
+        assert!(!is_framework_junk("/api/products"));
+        assert!(!is_framework_junk("/admin"));
+    }
+
+    #[test]
+    fn test_consolidate_routes() {
+        let endpoints = vec![
+            DiscoveredEndpoint {
+                url: "http://localhost/api/products/1".to_string(),
+                status_code: 405,
+                content_length: 0,
+                content_type: None,
+                interesting: true,
+                pentest_score: 2,
+                notes: vec![],
+                is_parameterized: true,
+                param_pattern: Some("/api/products/{id}".to_string()),
+            },
+            DiscoveredEndpoint {
+                url: "http://localhost/api/products/2".to_string(),
+                status_code: 405,
+                content_length: 0,
+                content_type: None,
+                interesting: true,
+                pentest_score: 2,
+                notes: vec![],
+                is_parameterized: true,
+                param_pattern: Some("/api/products/{id}".to_string()),
+            },
+            DiscoveredEndpoint {
+                url: "http://localhost/api/products/3".to_string(),
+                status_code: 405,
+                content_length: 0,
+                content_type: None,
+                interesting: true,
+                pentest_score: 2,
+                notes: vec![],
+                is_parameterized: true,
+                param_pattern: Some("/api/products/{id}".to_string()),
+            },
+        ];
+
+        let refs: Vec<&DiscoveredEndpoint> = endpoints.iter().collect();
+        let consolidated = consolidate_routes(&refs);
+
+        // Should consolidate to 1 entry
+        assert_eq!(consolidated.len(), 1);
+        assert_eq!(consolidated[0].pattern, "/api/products/{id}");
+        assert_eq!(consolidated[0].variant_count, 3);
+    }
 
     #[test]
     fn test_pentest_scoring_high_value() {

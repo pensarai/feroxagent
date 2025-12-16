@@ -21,9 +21,7 @@ pub use generator::{
     generate_wordlist, output_attack_report, output_wordlist, GenerationResult, GeneratorConfig,
 };
 pub use llm::ClaudeClient;
-pub use mutations::{
-    expand_parameterized_paths, generate_mutations, Framework, MutationConfig,
-};
+pub use mutations::{expand_parameterized_paths, generate_mutations, Framework, MutationConfig};
 pub use probe::{probe_urls, HeaderMutationResults, MethodVariations, ProbeResult};
 pub use report::{
     detect_parameterized_endpoint, output_report, DiscoveredEndpoint, PentestReport, ReportStats,
