@@ -118,6 +118,14 @@ Generate a wordlist without scanning:
 katana -u https://target.com -silent | feroxagent -u https://target.com --wordlist-only
 ```
 
+### JSON Output (for automation/agents)
+
+Output structured JSON to stdout for piping to other tools or AI agents:
+
+```bash
+katana -u https://target.com -silent | feroxagent -u https://target.com --json | jq '.canonical_endpoints'
+```
+
 ### Use a Recon File
 
 Load reconnaissance data from a file instead of stdin:
@@ -134,6 +142,7 @@ feroxagent -u https://target.com --recon-file urls.txt
 |------|-------------|
 | `--recon-file <FILE>` | Path to file containing reconnaissance URLs (alternative to stdin) |
 | `--wordlist-only` | Output generated wordlist to stdout and exit (don't scan) |
+| `--json` | Output structured JSON to stdout (canonical endpoints + token usage) |
 
 ### Inherited feroxbuster Options
 
@@ -200,6 +209,44 @@ feroxagent --help
 1. Test GraphQL introspection at /graphql
 2. Enumerate /api/v1/ endpoints for IDOR
 3. Check /_next/data/ for sensitive SSR payloads
+```
+
+### JSON Output (`--json`)
+
+```json
+{
+  "target": "https://example.com",
+  "canonical_endpoints": [
+    {
+      "path": "/api/users",
+      "methods": ["GET", "POST"],
+      "status": 200,
+      "is_catch_all": false,
+      "variant_count": 1
+    },
+    {
+      "path": "/api/users/{id}",
+      "methods": ["GET", "PUT", "DELETE"],
+      "auth_required_methods": ["PUT", "DELETE"],
+      "status": 401,
+      "is_catch_all": true,
+      "variant_count": 15,
+      "observed_variants": ["1", "2", "me", "current"]
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 12540,
+    "output_tokens": 1892,
+    "cache_read_input_tokens": 8192,
+    "cache_creation_input_tokens": 0,
+    "total_tokens": 14432
+  },
+  "stats": {
+    "total_endpoints": 23,
+    "parameterized_endpoints": 8,
+    "catch_all_endpoints": 3
+  }
+}
 ```
 
 ## Example Workflow
