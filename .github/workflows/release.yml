@@ -1,0 +1,173 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-release:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+            artifact: x86_64-linux-feroxagent
+            archive: x86_64-linux-feroxagent.tar.gz
+          - os: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
+            artifact: aarch64-linux-feroxagent
+            archive: aarch64-linux-feroxagent.tar.gz
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            artifact: x86_64-macos-feroxagent
+            archive: x86_64-macos-feroxagent.tar.gz
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            artifact: aarch64-macos-feroxagent
+            archive: aarch64-macos-feroxagent.tar.gz
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            artifact: x86_64-windows-feroxagent
+            archive: x86_64-windows-feroxagent.zip
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache cargo & target directories
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build binary
+        uses: houseabsolute/actions-rust-cross@v0
+        with:
+          command: build
+          target: ${{ matrix.target }}
+          args: "--locked --release"
+          strip: true
+          toolchain: stable
+
+      - name: Create archive (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          cd target/${{ matrix.target }}/release
+          tar czf ../../../${{ matrix.archive }} feroxagent
+
+      - name: Create archive (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          cd target/${{ matrix.target }}/release
+          7z a ../../../${{ matrix.archive }} feroxagent.exe
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.archive }}
+          path: ${{ matrix.archive }}
+
+  create-release:
+    needs: build-release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Get version
+        id: version
+        run: echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Display structure
+        run: ls -R artifacts
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: artifacts/**/*
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  update-homebrew:
+    needs: [build-release, create-release]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download artifacts for SHA calculation
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Calculate SHAs and update Homebrew
+        env:
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          VERSION: ${{ needs.create-release.outputs.version }}
+        run: |
+          # Calculate SHA256 for each archive
+          SHA_AARCH64_MACOS=$(shasum -a 256 artifacts/aarch64-macos-feroxagent.tar.gz/aarch64-macos-feroxagent.tar.gz | cut -d ' ' -f 1)
+          SHA_X86_64_MACOS=$(shasum -a 256 artifacts/x86_64-macos-feroxagent.tar.gz/x86_64-macos-feroxagent.tar.gz | cut -d ' ' -f 1)
+          SHA_AARCH64_LINUX=$(shasum -a 256 artifacts/aarch64-linux-feroxagent.tar.gz/aarch64-linux-feroxagent.tar.gz | cut -d ' ' -f 1)
+          SHA_X86_64_LINUX=$(shasum -a 256 artifacts/x86_64-linux-feroxagent.tar.gz/x86_64-linux-feroxagent.tar.gz | cut -d ' ' -f 1)
+
+          echo "Version: $VERSION"
+          echo "SHA aarch64-macos: $SHA_AARCH64_MACOS"
+          echo "SHA x86_64-macos: $SHA_X86_64_MACOS"
+          echo "SHA aarch64-linux: $SHA_AARCH64_LINUX"
+          echo "SHA x86_64-linux: $SHA_X86_64_LINUX"
+
+          # Generate the formula content
+          FORMULA=$(cat <<EOF
+          class Feroxagent < Formula
+            desc "AI-powered content discovery tool using LLM-generated wordlists"
+            homepage "https://github.com/pensarai/feroxagent"
+            version "$VERSION"
+            license "MIT"
+
+            on_macos do
+              if Hardware::CPU.arm?
+                url "https://github.com/pensarai/feroxagent/releases/download/v#{version}/aarch64-macos-feroxagent.tar.gz"
+                sha256 "$SHA_AARCH64_MACOS"
+              else
+                url "https://github.com/pensarai/feroxagent/releases/download/v#{version}/x86_64-macos-feroxagent.tar.gz"
+                sha256 "$SHA_X86_64_MACOS"
+              end
+            end
+
+            on_linux do
+              if Hardware::CPU.arm?
+                url "https://github.com/pensarai/feroxagent/releases/download/v#{version}/aarch64-linux-feroxagent.tar.gz"
+                sha256 "$SHA_AARCH64_LINUX"
+              else
+                url "https://github.com/pensarai/feroxagent/releases/download/v#{version}/x86_64-linux-feroxagent.tar.gz"
+                sha256 "$SHA_X86_64_LINUX"
+              end
+            end
+
+            def install
+              bin.install "feroxagent"
+            end
+
+            test do
+              assert_match version.to_s, shell_output("#{bin}/feroxagent --version")
+            end
+          end
+          EOF
+          )
+
+          # Clone the homebrew tap repo, update formula, and push
+          git clone https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/pensarai/homebrew-feroxagent.git tap
+          cd tap
+          mkdir -p Formula
+          echo "$FORMULA" > Formula/feroxagent.rb
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/feroxagent.rb
+          git commit -m "Update feroxagent to v$VERSION"
+          git push

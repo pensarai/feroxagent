@@ -22,7 +22,7 @@
 ### Homebrew (macOS/Linux)
 
 ```bash
-brew tap kylejryan/tap
+brew tap pensarai/feroxagent
 brew install feroxagent
 ```
 
@@ -30,32 +30,32 @@ brew install feroxagent
 
 **macOS Apple Silicon (M1/M2/M3):**
 ```bash
-curl -sL https://github.com/kylejryan/feroxagent/releases/latest/download/aarch64-macos-feroxagent.tar.gz | tar xz -C /usr/local/bin
+curl -sL https://github.com/pensarai/feroxagent/releases/latest/download/aarch64-macos-feroxagent.tar.gz | tar xz -C /usr/local/bin
 ```
 
 **macOS Intel:**
 ```bash
-curl -sL https://github.com/kylejryan/feroxagent/releases/latest/download/x86_64-macos-feroxagent.tar.gz | tar xz -C /usr/local/bin
+curl -sL https://github.com/pensarai/feroxagent/releases/latest/download/x86_64-macos-feroxagent.tar.gz | tar xz -C /usr/local/bin
 ```
 
 **Linux x86_64:**
 ```bash
-curl -sL https://github.com/kylejryan/feroxagent/releases/latest/download/x86_64-linux-feroxagent.tar.gz | tar xz -C /usr/local/bin
+curl -sL https://github.com/pensarai/feroxagent/releases/latest/download/x86_64-linux-feroxagent.tar.gz | tar xz -C /usr/local/bin
 ```
 
 **Linux ARM64:**
 ```bash
-curl -sL https://github.com/kylejryan/feroxagent/releases/latest/download/aarch64-linux-feroxagent.tar.gz | tar xz -C /usr/local/bin
+curl -sL https://github.com/pensarai/feroxagent/releases/latest/download/aarch64-linux-feroxagent.tar.gz | tar xz -C /usr/local/bin
 ```
 
 **Windows (PowerShell):**
 ```powershell
-Invoke-WebRequest -Uri https://github.com/kylejryan/feroxagent/releases/latest/download/x86_64-windows-feroxagent.zip -OutFile feroxagent.zip; Expand-Archive feroxagent.zip -DestinationPath $env:USERPROFILE\bin
+Invoke-WebRequest -Uri https://github.com/pensarai/feroxagent/releases/latest/download/x86_64-windows-feroxagent.zip -OutFile feroxagent.zip; Expand-Archive feroxagent.zip -DestinationPath $env:USERPROFILE\bin
 ```
 
 ### Download Binary
 
-Or download manually from [GitHub Releases](https://github.com/kylejryan/feroxagent/releases):
+Or download manually from [GitHub Releases](https://github.com/pensarai/feroxagent/releases):
 
 | Platform | Download |
 |----------|----------|
@@ -68,7 +68,7 @@ Or download manually from [GitHub Releases](https://github.com/kylejryan/feroxag
 ### Build from Source
 
 ```bash
-git clone https://github.com/kylejryan/feroxagent.git
+git clone https://github.com/pensarai/feroxagent.git
 cd feroxagent
 cargo build --release
 ```
