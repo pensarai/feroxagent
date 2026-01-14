@@ -151,7 +151,7 @@ const AUTH_PATHS: &[(&str, AuthEndpointType)] = &[
     ("/api/token", AuthEndpointType::TokenRefresh),
     ("/oauth/token", AuthEndpointType::OAuth),
     ("/api/auth/session", AuthEndpointType::Session), // NextAuth
-    ("/api/auth/csrf", AuthEndpointType::Session), // NextAuth
+    ("/api/auth/csrf", AuthEndpointType::Session),    // NextAuth
     // Logout
     ("/logout", AuthEndpointType::Logout),
     ("/signout", AuthEndpointType::Logout),
@@ -229,11 +229,7 @@ async fn probe_auth_endpoint(
     client: &Client,
 ) -> Result<Option<AuthEndpoint>> {
     // Try GET first
-    let get_response = client
-        .get(url)
-        .timeout(Duration::from_secs(5))
-        .send()
-        .await;
+    let get_response = client.get(url).timeout(Duration::from_secs(5)).send().await;
 
     let (status_code, content_type, is_auth_endpoint) = match get_response {
         Ok(resp) => {
@@ -311,10 +307,7 @@ async fn probe_auth_endpoint(
 }
 
 /// Probe a single manually-specified auth endpoint
-pub async fn probe_single_auth_endpoint(
-    url: &str,
-    client: &Client,
-) -> Result<AuthDiscoveryResult> {
+pub async fn probe_single_auth_endpoint(url: &str, client: &Client) -> Result<AuthDiscoveryResult> {
     let endpoint_type = infer_endpoint_type(url);
 
     let mut result = AuthDiscoveryResult::default();
@@ -455,7 +448,10 @@ pub async fn attempt_authentication(
                                         log::warn!(
                                             "Login returned non-success status {}: {}",
                                             login_status,
-                                            login_result.error_message.as_deref().unwrap_or("unknown")
+                                            login_result
+                                                .error_message
+                                                .as_deref()
+                                                .unwrap_or("unknown")
                                         );
                                         // Still keep the registration success and credentials
                                         result.error_message = login_result.error_message;
@@ -467,9 +463,13 @@ pub async fn attempt_authentication(
                                 }
                             }
                         } else {
-                            log::warn!("No login action in auth plan, cannot login after registration");
-                            result.error_message =
-                                Some("Registration succeeded but no login endpoint available".to_string());
+                            log::warn!(
+                                "No login action in auth plan, cannot login after registration"
+                            );
+                            result.error_message = Some(
+                                "Registration succeeded but no login endpoint available"
+                                    .to_string(),
+                            );
                         }
 
                         return Ok(result);
@@ -509,7 +509,10 @@ async fn try_register(
         .body_template
         .replace("{email}", &creds.email)
         .replace("{password}", &creds.password)
-        .replace("{username}", creds.email.split('@').next().unwrap_or("feroxtest"));
+        .replace(
+            "{username}",
+            creds.email.split('@').next().unwrap_or("feroxtest"),
+        );
 
     log::debug!(
         "Attempting registration: {} {} Content-Type: {}",
@@ -716,10 +719,7 @@ mod tests {
             infer_endpoint_type("/api/auth/register"),
             AuthEndpointType::Register
         );
-        assert_eq!(
-            infer_endpoint_type("/oauth/token"),
-            AuthEndpointType::OAuth
-        );
+        assert_eq!(infer_endpoint_type("/oauth/token"), AuthEndpointType::OAuth);
         assert_eq!(
             infer_endpoint_type("/forgot-password"),
             AuthEndpointType::PasswordReset

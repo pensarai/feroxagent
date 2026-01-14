@@ -268,10 +268,13 @@ impl PentestReport {
                 summary: Some(plan.summary.clone()),
                 token: result.token.clone(),
                 cookies: result.cookies.clone(),
-                credentials: result.credentials_used.as_ref().map(|creds| JsonCredentials {
-                    email: creds.email.clone(),
-                    password: creds.password.clone(),
-                }),
+                credentials: result
+                    .credentials_used
+                    .as_ref()
+                    .map(|creds| JsonCredentials {
+                        email: creds.email.clone(),
+                        password: creds.password.clone(),
+                    }),
             }
         });
 

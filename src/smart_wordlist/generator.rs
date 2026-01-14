@@ -115,7 +115,10 @@ pub async fn generate_wordlist(
 
         let discovery = if let Some(ref manual_endpoint) = config.auth_endpoint {
             // Manual endpoint provided - probe just that
-            log::info!("Using manually specified auth endpoint: {}", manual_endpoint);
+            log::info!(
+                "Using manually specified auth endpoint: {}",
+                manual_endpoint
+            );
             let full_url = if manual_endpoint.starts_with("http") {
                 manual_endpoint.clone()
             } else {
@@ -170,13 +173,9 @@ pub async fn generate_wordlist(
                     eprintln!("[*] Attempting authentication...");
                 }
             }
-            let auth_attempt = attempt_authentication(
-                &discovery,
-                &auth_plan,
-                http_client,
-                config.auto_register,
-            )
-            .await?;
+            let auth_attempt =
+                attempt_authentication(&discovery, &auth_plan, http_client, config.auto_register)
+                    .await?;
 
             if auth_attempt.success {
                 if !config.json {

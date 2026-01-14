@@ -491,8 +491,12 @@ Output the wordlist now:"#,
         analysis: &TechAnalysis,
     ) -> Result<(super::auth_discovery::AuthPlan, UsageMetrics)> {
         let system_prompt = self.build_auth_plan_system_prompt();
-        let user_prompt =
-            self.build_auth_plan_user_prompt(auth_discovery, user_instructions, target_url, analysis);
+        let user_prompt = self.build_auth_plan_user_prompt(
+            auth_discovery,
+            user_instructions,
+            target_url,
+            analysis,
+        );
 
         let request = ClaudeRequest {
             model: CLAUDE_MODEL.to_string(),
@@ -648,10 +652,7 @@ Generate an authentication plan JSON based on these endpoints. If user instructi
 
             // Parse registration
             if let Some(reg) = json.get("registration") {
-                let raw_endpoint = reg
-                    .get("endpoint")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("");
+                let raw_endpoint = reg.get("endpoint").and_then(|v| v.as_str()).unwrap_or("");
                 plan.registration = Some(AuthAction {
                     endpoint: make_absolute(raw_endpoint),
                     method: reg
@@ -683,10 +684,7 @@ Generate an authentication plan JSON based on these endpoints. If user instructi
 
             // Parse login
             if let Some(login) = json.get("login") {
-                let raw_endpoint = login
-                    .get("endpoint")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("");
+                let raw_endpoint = login.get("endpoint").and_then(|v| v.as_str()).unwrap_or("");
                 plan.login = Some(AuthAction {
                     endpoint: make_absolute(raw_endpoint),
                     method: login
@@ -719,7 +717,9 @@ Generate an authentication plan JSON based on these endpoints. If user instructi
             // Parse token location
             if let Some(token_loc) = json.get("token_location").and_then(|v| v.as_str()) {
                 plan.token_location = if token_loc.starts_with("body:") {
-                    TokenLocation::ResponseBodyField(token_loc.trim_start_matches("body:").to_string())
+                    TokenLocation::ResponseBodyField(
+                        token_loc.trim_start_matches("body:").to_string(),
+                    )
                 } else if token_loc == "cookie" {
                     TokenLocation::SetCookieHeader
                 } else if token_loc == "header" {
@@ -781,10 +781,7 @@ Generate an authentication plan JSON based on these endpoints. If user instructi
 
         // Default to token in response body
         plan.token_location = TokenLocation::ResponseBodyField("token".to_string());
-        plan.summary = format!(
-            "Authentication via {}",
-            auth_discovery.summary()
-        );
+        plan.summary = format!("Authentication via {}", auth_discovery.summary());
 
         plan
     }

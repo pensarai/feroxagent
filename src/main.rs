@@ -233,7 +233,8 @@ async fn wrapped_main(config: Arc<Configuration>) -> Result<()> {
                 match auth_result.token_type {
                     AuthTokenType::Bearer => {
                         if let Some(ref token) = auth_result.token {
-                            auth_headers.insert("Authorization".to_string(), format!("Bearer {}", token));
+                            auth_headers
+                                .insert("Authorization".to_string(), format!("Bearer {}", token));
                             log::info!("Added Bearer token to requests");
                             if !config.json {
                                 eprintln!("[+] Authentication successful - added Bearer token to requests");
@@ -258,7 +259,9 @@ async fn wrapped_main(config: Arc<Configuration>) -> Result<()> {
                             auth_headers.insert("X-API-Key".to_string(), token.clone());
                             log::info!("Added API key to requests");
                             if !config.json {
-                                eprintln!("[+] Authentication successful - added API key to requests");
+                                eprintln!(
+                                    "[+] Authentication successful - added API key to requests"
+                                );
                             }
                         }
                     }
@@ -779,7 +782,8 @@ async fn wrapped_main(config: Arc<Configuration>) -> Result<()> {
     // Output the comprehensive report
     if config.json {
         // JSON output to stdout only
-        let json_output = pentest_report.to_json_output(&token_usage, auth_result_for_report.as_ref());
+        let json_output =
+            pentest_report.to_json_output(&token_usage, auth_result_for_report.as_ref());
         println!(
             "{}",
             serde_json::to_string_pretty(&json_output).unwrap_or_else(|e| {
