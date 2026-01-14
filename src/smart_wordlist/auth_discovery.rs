@@ -730,7 +730,10 @@ mod tests {
             AuthEndpointType::PasswordReset
         );
         // Pure oauth path (no token) returns OAuth
-        assert_eq!(infer_endpoint_type("/oauth/authorize"), AuthEndpointType::OAuth);
+        assert_eq!(
+            infer_endpoint_type("/oauth/authorize"),
+            AuthEndpointType::OAuth
+        );
     }
 
     #[test]
@@ -741,10 +744,7 @@ mod tests {
             AuthEndpointType::Login
         );
         assert_eq!(infer_endpoint_type("/signin"), AuthEndpointType::Login);
-        assert_eq!(
-            infer_endpoint_type("/user/login"),
-            AuthEndpointType::Login
-        );
+        assert_eq!(infer_endpoint_type("/user/login"), AuthEndpointType::Login);
     }
 
     #[test]
@@ -769,19 +769,13 @@ mod tests {
             infer_endpoint_type("/api/auth/logout"),
             AuthEndpointType::Logout
         );
-        assert_eq!(
-            infer_endpoint_type("/api/logout"),
-            AuthEndpointType::Logout
-        );
+        assert_eq!(infer_endpoint_type("/api/logout"), AuthEndpointType::Logout);
     }
 
     #[test]
     fn test_infer_endpoint_type_unknown() {
         // Unknown paths return Unknown
-        assert_eq!(
-            infer_endpoint_type("/api/users"),
-            AuthEndpointType::Unknown
-        );
+        assert_eq!(infer_endpoint_type("/api/users"), AuthEndpointType::Unknown);
         assert_eq!(
             infer_endpoint_type("/some/random/path"),
             AuthEndpointType::Unknown
@@ -795,8 +789,14 @@ mod tests {
         assert_eq!(format!("{}", AuthEndpointType::Logout), "logout");
         assert_eq!(format!("{}", AuthEndpointType::OAuth), "oauth");
         assert_eq!(format!("{}", AuthEndpointType::Session), "session");
-        assert_eq!(format!("{}", AuthEndpointType::TokenRefresh), "token_refresh");
-        assert_eq!(format!("{}", AuthEndpointType::PasswordReset), "password_reset");
+        assert_eq!(
+            format!("{}", AuthEndpointType::TokenRefresh),
+            "token_refresh"
+        );
+        assert_eq!(
+            format!("{}", AuthEndpointType::PasswordReset),
+            "password_reset"
+        );
     }
 
     #[test]
@@ -985,7 +985,8 @@ mod tests {
 
     #[test]
     fn test_body_template_replacement() {
-        let template = r#"{"email": "{email}", "password": "{password}", "username": "{username}"}"#;
+        let template =
+            r#"{"email": "{email}", "password": "{password}", "username": "{username}"}"#;
         let email = "test@example.com";
         let password = "secret123";
         let username = "testuser";
