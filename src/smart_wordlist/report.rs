@@ -6,6 +6,7 @@
 //! Uses a signal-based scoring system to filter noise and surface
 //! only high-value findings worth investigating.
 
+use super::auth_discovery::{AuthDiscoveryResult, AuthPlan, AuthResult, AuthTokenType};
 use super::llm::AggregatedUsage;
 use console::style;
 use serde::{Deserialize, Serialize};
@@ -75,6 +76,8 @@ pub struct JsonOutput {
     pub canonical_endpoints: Vec<CanonicalEndpointJson>,
     pub token_usage: JsonTokenUsage,
     pub stats: JsonStats,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub auth_discovery: Option<JsonAuthDiscovery>,
 }
 
 /// Canonical endpoint in JSON output format
@@ -107,6 +110,64 @@ pub struct JsonTokenUsage {
 pub struct JsonStats {
     pub total_paths_tested: usize,
     pub total_filtered_noise: usize,
+}
+
+/// Auth discovery in JSON output format
+#[derive(Debug, Serialize)]
+pub struct JsonAuthDiscovery {
+    /// Whether auth discovery was attempted
+    pub discovered: bool,
+    /// Whether authentication was successful
+    pub authenticated: bool,
+    /// List of discovered auth endpoints
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub endpoints: Vec<JsonAuthEndpoint>,
+    /// Registration availability
+    pub registration_available: bool,
+    /// Login endpoint if found
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub login_endpoint: Option<String>,
+    /// Register endpoint if found
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub register_endpoint: Option<String>,
+    /// Type of authentication used (Bearer, Cookie, ApiKey, None)
+    pub auth_type: String,
+    /// Whether a new user was created during auth discovery
+    pub user_created: bool,
+    /// Summary of the auth flow
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub summary: Option<String>,
+    /// The auth token obtained (if any)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub token: Option<String>,
+    /// Session cookies obtained (if any)
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub cookies: Vec<String>,
+    /// Credentials used for authentication
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub credentials: Option<JsonCredentials>,
+}
+
+/// Credentials used for authentication
+#[derive(Debug, Serialize)]
+pub struct JsonCredentials {
+    pub email: String,
+    pub password: String,
+}
+
+/// Auth endpoint in JSON output format
+#[derive(Debug, Serialize)]
+pub struct JsonAuthEndpoint {
+    pub url: String,
+    #[serde(rename = "type")]
+    pub endpoint_type: String,
+    pub method: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub content_type: Option<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub detected_fields: Vec<String>,
+    /// Status code from auth attempt (or discovery if not attempted)
+    pub status_code: u16,
 }
 
 impl PentestReport {
@@ -146,7 +207,11 @@ impl PentestReport {
     }
 
     /// Convert report to JSON output format
-    pub fn to_json_output(&self, token_usage: &AggregatedUsage) -> JsonOutput {
+    pub fn to_json_output(
+        &self,
+        token_usage: &AggregatedUsage,
+        auth_result: Option<&(AuthDiscoveryResult, AuthPlan, AuthResult)>,
+    ) -> JsonOutput {
         let canonical_endpoints: Vec<CanonicalEndpointJson> = self
             .canonical_endpoints
             .iter()
@@ -160,6 +225,55 @@ impl PentestReport {
                 observed_variants: e.observed_param_values.clone(),
             })
             .collect();
+
+        // Convert auth discovery results if present
+        let auth_discovery = auth_result.map(|(discovery, plan, result)| {
+            JsonAuthDiscovery {
+                discovered: true,
+                authenticated: result.success,
+                endpoints: discovery
+                    .endpoints
+                    .iter()
+                    .map(|ep| {
+                        // Use actual auth attempt status if available, otherwise discovery status
+                        let status = match ep.endpoint_type {
+                            super::auth_discovery::AuthEndpointType::Login => {
+                                result.login_status.unwrap_or(ep.status_code)
+                            }
+                            super::auth_discovery::AuthEndpointType::Register => {
+                                result.register_status.unwrap_or(ep.status_code)
+                            }
+                            _ => ep.status_code,
+                        };
+                        JsonAuthEndpoint {
+                            url: ep.url.clone(),
+                            endpoint_type: format!("{:?}", ep.endpoint_type),
+                            method: ep.method.clone(),
+                            content_type: ep.content_type.clone(),
+                            detected_fields: ep.detected_fields.clone(),
+                            status_code: status,
+                        }
+                    })
+                    .collect(),
+                registration_available: discovery.registration_available,
+                login_endpoint: discovery.login_endpoint.as_ref().map(|e| e.url.clone()),
+                register_endpoint: discovery.register_endpoint.as_ref().map(|e| e.url.clone()),
+                auth_type: match result.token_type {
+                    AuthTokenType::Bearer => "Bearer".to_string(),
+                    AuthTokenType::Cookie => "Cookie".to_string(),
+                    AuthTokenType::ApiKey => "ApiKey".to_string(),
+                    AuthTokenType::None => "None".to_string(),
+                },
+                user_created: result.user_created,
+                summary: Some(plan.summary.clone()),
+                token: result.token.clone(),
+                cookies: result.cookies.clone(),
+                credentials: result.credentials_used.as_ref().map(|creds| JsonCredentials {
+                    email: creds.email.clone(),
+                    password: creds.password.clone(),
+                }),
+            }
+        });
 
         JsonOutput {
             target: self.target.clone(),
@@ -175,6 +289,7 @@ impl PentestReport {
                 total_paths_tested: self.stats.total_paths_tested,
                 total_filtered_noise: self.stats.total_filtered_noise,
             },
+            auth_discovery,
         }
     }
 

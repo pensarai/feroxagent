@@ -10,6 +10,7 @@
 //! - Static asset filtering to reduce false positives
 
 mod analyzer;
+mod auth_discovery;
 mod generator;
 mod llm;
 mod mutations;
@@ -17,6 +18,11 @@ mod probe;
 mod report;
 
 pub use analyzer::TechAnalysis;
+pub use auth_discovery::{
+    attempt_authentication, discover_auth_endpoints, generate_test_credentials,
+    probe_single_auth_endpoint, AuthAction, AuthDiscoveryResult, AuthEndpoint, AuthEndpointType,
+    AuthPlan, AuthResult, AuthTokenType, TestCredentials, TokenLocation,
+};
 pub use generator::{
     budget_wordlist, generate_wordlist, output_attack_report, output_wordlist, BudgetConfig,
     GenerationResult, GeneratorConfig,
