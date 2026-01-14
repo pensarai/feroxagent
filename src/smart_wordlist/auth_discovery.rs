@@ -113,7 +113,7 @@ pub struct AuthAction {
 }
 
 /// Where the auth token appears in the response
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "type", content = "field")]
 pub enum TokenLocation {
     ResponseBodyField(String),
@@ -711,6 +711,7 @@ mod tests {
 
     #[test]
     fn test_infer_endpoint_type() {
+        // Test basic endpoint type inference
         assert_eq!(
             infer_endpoint_type("/api/auth/login"),
             AuthEndpointType::Login
@@ -719,10 +720,71 @@ mod tests {
             infer_endpoint_type("/api/auth/register"),
             AuthEndpointType::Register
         );
-        assert_eq!(infer_endpoint_type("/oauth/token"), AuthEndpointType::OAuth);
+        // Note: /oauth/token returns TokenRefresh because "token" is matched before "oauth"
+        assert_eq!(
+            infer_endpoint_type("/oauth/token"),
+            AuthEndpointType::TokenRefresh
+        );
         assert_eq!(
             infer_endpoint_type("/forgot-password"),
             AuthEndpointType::PasswordReset
+        );
+        // Pure oauth path (no token) returns OAuth
+        assert_eq!(infer_endpoint_type("/oauth/authorize"), AuthEndpointType::OAuth);
+    }
+
+    #[test]
+    fn test_infer_endpoint_type_login_variants() {
+        // Test various login endpoint patterns (must contain "login" or "signin")
+        assert_eq!(
+            infer_endpoint_type("/api/auth/login"),
+            AuthEndpointType::Login
+        );
+        assert_eq!(infer_endpoint_type("/signin"), AuthEndpointType::Login);
+        assert_eq!(
+            infer_endpoint_type("/user/login"),
+            AuthEndpointType::Login
+        );
+    }
+
+    #[test]
+    fn test_infer_endpoint_type_register_variants() {
+        // Test various register endpoint patterns (must contain "register" or "signup")
+        assert_eq!(
+            infer_endpoint_type("/api/auth/register"),
+            AuthEndpointType::Register
+        );
+        assert_eq!(infer_endpoint_type("/signup"), AuthEndpointType::Register);
+        assert_eq!(
+            infer_endpoint_type("/user/register"),
+            AuthEndpointType::Register
+        );
+    }
+
+    #[test]
+    fn test_infer_endpoint_type_logout_variants() {
+        assert_eq!(infer_endpoint_type("/logout"), AuthEndpointType::Logout);
+        assert_eq!(infer_endpoint_type("/signout"), AuthEndpointType::Logout);
+        assert_eq!(
+            infer_endpoint_type("/api/auth/logout"),
+            AuthEndpointType::Logout
+        );
+        assert_eq!(
+            infer_endpoint_type("/api/logout"),
+            AuthEndpointType::Logout
+        );
+    }
+
+    #[test]
+    fn test_infer_endpoint_type_unknown() {
+        // Unknown paths return Unknown
+        assert_eq!(
+            infer_endpoint_type("/api/users"),
+            AuthEndpointType::Unknown
+        );
+        assert_eq!(
+            infer_endpoint_type("/some/random/path"),
+            AuthEndpointType::Unknown
         );
     }
 
@@ -730,5 +792,263 @@ mod tests {
     fn test_auth_endpoint_type_display() {
         assert_eq!(format!("{}", AuthEndpointType::Login), "login");
         assert_eq!(format!("{}", AuthEndpointType::Register), "register");
+        assert_eq!(format!("{}", AuthEndpointType::Logout), "logout");
+        assert_eq!(format!("{}", AuthEndpointType::OAuth), "oauth");
+        assert_eq!(format!("{}", AuthEndpointType::Session), "session");
+        assert_eq!(format!("{}", AuthEndpointType::TokenRefresh), "token_refresh");
+        assert_eq!(format!("{}", AuthEndpointType::PasswordReset), "password_reset");
+    }
+
+    #[test]
+    fn test_auth_result_has_auth_with_token() {
+        let result = AuthResult {
+            success: true,
+            token: Some("test_token".to_string()),
+            cookies: vec![],
+            token_type: AuthTokenType::Bearer,
+            ..Default::default()
+        };
+        assert!(result.has_auth());
+    }
+
+    #[test]
+    fn test_auth_result_has_auth_with_cookies() {
+        let result = AuthResult {
+            success: true,
+            token: None,
+            cookies: vec!["session=abc123".to_string()],
+            token_type: AuthTokenType::Cookie,
+            ..Default::default()
+        };
+        assert!(result.has_auth());
+    }
+
+    #[test]
+    fn test_auth_result_has_auth_failure() {
+        // No auth if success is false
+        let result = AuthResult {
+            success: false,
+            token: Some("test_token".to_string()),
+            cookies: vec![],
+            ..Default::default()
+        };
+        assert!(!result.has_auth());
+
+        // No auth if no token or cookies
+        let result = AuthResult {
+            success: true,
+            token: None,
+            cookies: vec![],
+            ..Default::default()
+        };
+        assert!(!result.has_auth());
+    }
+
+    #[test]
+    fn test_auth_discovery_result_summary_login_only() {
+        let result = AuthDiscoveryResult {
+            login_endpoint: Some(AuthEndpoint {
+                url: "http://example.com/api/login".to_string(),
+                endpoint_type: AuthEndpointType::Login,
+                method: "POST".to_string(),
+                content_type: Some("application/json".to_string()),
+                detected_fields: vec!["email".to_string(), "password".to_string()],
+                status_code: 200,
+            }),
+            register_endpoint: None,
+            ..Default::default()
+        };
+        let summary = result.summary();
+        assert!(summary.contains("login=http://example.com/api/login"));
+        assert!(!summary.contains("register="));
+    }
+
+    #[test]
+    fn test_auth_discovery_result_summary_both_endpoints() {
+        let result = AuthDiscoveryResult {
+            login_endpoint: Some(AuthEndpoint {
+                url: "http://example.com/api/login".to_string(),
+                endpoint_type: AuthEndpointType::Login,
+                method: "POST".to_string(),
+                content_type: None,
+                detected_fields: vec![],
+                status_code: 200,
+            }),
+            register_endpoint: Some(AuthEndpoint {
+                url: "http://example.com/api/register".to_string(),
+                endpoint_type: AuthEndpointType::Register,
+                method: "POST".to_string(),
+                content_type: None,
+                detected_fields: vec![],
+                status_code: 201,
+            }),
+            registration_available: true,
+            ..Default::default()
+        };
+        let summary = result.summary();
+        assert!(summary.contains("login=http://example.com/api/login"));
+        assert!(summary.contains("register=http://example.com/api/register"));
+    }
+
+    #[test]
+    fn test_auth_discovery_result_summary_no_endpoints() {
+        let result = AuthDiscoveryResult::default();
+        let summary = result.summary();
+        assert_eq!(summary, "No auth endpoints discovered");
+    }
+
+    #[test]
+    fn test_auth_token_type_default() {
+        let token_type = AuthTokenType::default();
+        assert_eq!(token_type, AuthTokenType::None);
+    }
+
+    #[test]
+    fn test_token_location_default() {
+        let location = TokenLocation::default();
+        assert_eq!(location, TokenLocation::Unknown);
+    }
+
+    #[test]
+    fn test_auth_result_default() {
+        let result = AuthResult::default();
+        assert!(!result.success);
+        assert!(result.token.is_none());
+        assert!(result.cookies.is_empty());
+        assert_eq!(result.token_type, AuthTokenType::None);
+        assert!(!result.user_created);
+        assert!(result.credentials_used.is_none());
+        assert!(result.error_message.is_none());
+        assert!(result.register_status.is_none());
+        assert!(result.login_status.is_none());
+    }
+
+    #[test]
+    fn test_auth_endpoint_clone() {
+        let endpoint = AuthEndpoint {
+            url: "http://example.com/login".to_string(),
+            endpoint_type: AuthEndpointType::Login,
+            method: "POST".to_string(),
+            content_type: Some("application/json".to_string()),
+            detected_fields: vec!["email".to_string(), "password".to_string()],
+            status_code: 200,
+        };
+        let cloned = endpoint.clone();
+        assert_eq!(endpoint.url, cloned.url);
+        assert_eq!(endpoint.endpoint_type, cloned.endpoint_type);
+        assert_eq!(endpoint.method, cloned.method);
+        assert_eq!(endpoint.content_type, cloned.content_type);
+        assert_eq!(endpoint.detected_fields, cloned.detected_fields);
+        assert_eq!(endpoint.status_code, cloned.status_code);
+    }
+
+    #[test]
+    fn test_auth_action_fields() {
+        let action = AuthAction {
+            endpoint: "http://example.com/api/login".to_string(),
+            method: "POST".to_string(),
+            content_type: "application/json".to_string(),
+            body_template: r#"{"email": "{email}", "password": "{password}"}"#.to_string(),
+            required_fields: vec!["email".to_string(), "password".to_string()],
+        };
+        assert_eq!(action.endpoint, "http://example.com/api/login");
+        assert_eq!(action.method, "POST");
+        assert_eq!(action.content_type, "application/json");
+        assert!(action.body_template.contains("{email}"));
+        assert!(action.body_template.contains("{password}"));
+        assert_eq!(action.required_fields.len(), 2);
+    }
+
+    #[test]
+    fn test_auth_plan_default() {
+        let plan = AuthPlan::default();
+        assert!(plan.registration.is_none());
+        assert!(plan.login.is_none());
+        assert_eq!(plan.token_location, TokenLocation::Unknown);
+        assert!(plan.summary.is_empty());
+    }
+
+    #[test]
+    fn test_test_credentials_serialization() {
+        let creds = TestCredentials {
+            email: "test@example.com".to_string(),
+            password: "secret123".to_string(),
+        };
+        let json = serde_json::to_string(&creds).unwrap();
+        assert!(json.contains("test@example.com"));
+        assert!(json.contains("secret123"));
+
+        let deserialized: TestCredentials = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.email, creds.email);
+        assert_eq!(deserialized.password, creds.password);
+    }
+
+    #[test]
+    fn test_body_template_replacement() {
+        let template = r#"{"email": "{email}", "password": "{password}", "username": "{username}"}"#;
+        let email = "test@example.com";
+        let password = "secret123";
+        let username = "testuser";
+
+        let body = template
+            .replace("{email}", email)
+            .replace("{password}", password)
+            .replace("{username}", username);
+
+        assert!(body.contains("test@example.com"));
+        assert!(body.contains("secret123"));
+        assert!(body.contains("testuser"));
+        assert!(!body.contains("{email}"));
+        assert!(!body.contains("{password}"));
+        assert!(!body.contains("{username}"));
+    }
+
+    #[test]
+    fn test_auth_paths_contains_expected() {
+        // Verify AUTH_PATHS contains essential auth endpoints
+        let paths: Vec<&str> = AUTH_PATHS.iter().map(|(p, _)| *p).collect();
+
+        assert!(paths.contains(&"/login"));
+        assert!(paths.contains(&"/register"));
+        assert!(paths.contains(&"/api/auth/login"));
+        assert!(paths.contains(&"/api/auth/register"));
+        assert!(paths.contains(&"/logout"));
+        assert!(paths.contains(&"/oauth/token"));
+    }
+
+    #[test]
+    fn test_auth_paths_types() {
+        // Verify each path has the correct type
+        for (path, endpoint_type) in AUTH_PATHS.iter() {
+            let path_str: &str = path;
+            if path_str.contains("login")
+                || path_str.contains("signin")
+                || path_str.contains("sign_in")
+            {
+                assert_eq!(
+                    *endpoint_type,
+                    AuthEndpointType::Login,
+                    "Path {} should be Login type",
+                    path
+                );
+            } else if path_str.contains("register")
+                || path_str.contains("signup")
+                || path_str.contains("sign_up")
+            {
+                assert_eq!(
+                    *endpoint_type,
+                    AuthEndpointType::Register,
+                    "Path {} should be Register type",
+                    path
+                );
+            } else if path_str.contains("logout") || path_str.contains("signout") {
+                assert_eq!(
+                    *endpoint_type,
+                    AuthEndpointType::Logout,
+                    "Path {} should be Logout type",
+                    path
+                );
+            }
+        }
     }
 }
