@@ -509,7 +509,7 @@ async fn try_register(
         .body_template
         .replace("{email}", &creds.email)
         .replace("{password}", &creds.password)
-        .replace("{username}", &creds.email.split('@').next().unwrap_or("feroxtest"));
+        .replace("{username}", creds.email.split('@').next().unwrap_or("feroxtest"));
 
     log::debug!(
         "Attempting registration: {} {} Content-Type: {}",
