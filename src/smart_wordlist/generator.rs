@@ -3,6 +3,10 @@
 //! Coordinates the analysis, probing, and LLM-based wordlist generation.
 
 use super::analyzer::{analyze_urls, TechAnalysis};
+use super::auth_discovery::{
+    attempt_authentication, discover_auth_endpoints, probe_single_auth_endpoint,
+    AuthDiscoveryResult, AuthPlan, AuthResult,
+};
 use super::llm::{AggregatedUsage, ClaudeClient};
 use super::mutations::{expand_parameterized_paths, generate_mutations, MutationConfig};
 use super::probe::{probe_urls, summarize_probe_results};
@@ -16,6 +20,16 @@ pub struct GeneratorConfig {
     pub target_url: String,
     pub anthropic_key: String,
     pub recon_file: Option<String>,
+    /// Manually specified authentication endpoint
+    pub auth_endpoint: Option<String>,
+    /// User-provided instructions for authentication
+    pub auth_instructions: Option<String>,
+    /// Whether to attempt auto-registration
+    pub auto_register: bool,
+    /// Whether to disable auth discovery
+    pub no_discover_auth: bool,
+    /// Whether to suppress progress output (JSON mode)
+    pub json: bool,
 }
 
 /// Result of the generation process including wordlist and attack surface report
@@ -25,6 +39,8 @@ pub struct GenerationResult {
     pub recon_urls: Vec<String>,
     pub technologies: Vec<String>,
     pub token_usage: AggregatedUsage,
+    /// Authentication discovery and attempt results
+    pub auth_result: Option<(AuthDiscoveryResult, AuthPlan, AuthResult)>,
 }
 
 /// Configuration for wordlist budgeting to enforce diversity
@@ -85,10 +101,126 @@ pub async fn generate_wordlist(
 
     // Generate wordlist and attack report using LLM
     log::info!("Generating wordlist and attack surface report using Claude API...");
-    let claude = ClaudeClient::new(config.anthropic_key)?;
+    let claude = ClaudeClient::new(config.anthropic_key.clone())?;
 
     // Track aggregated token usage
     let mut token_usage = AggregatedUsage::default();
+
+    // === AUTH DISCOVERY PHASE ===
+    let auth_result = if !config.no_discover_auth {
+        if !config.json {
+            eprintln!("[*] Discovering authentication endpoints...");
+        }
+        log::info!("Discovering authentication endpoints...");
+
+        let discovery = if let Some(ref manual_endpoint) = config.auth_endpoint {
+            // Manual endpoint provided - probe just that
+            log::info!(
+                "Using manually specified auth endpoint: {}",
+                manual_endpoint
+            );
+            let full_url = if manual_endpoint.starts_with("http") {
+                manual_endpoint.clone()
+            } else {
+                format!(
+                    "{}{}",
+                    config.target_url.trim_end_matches('/'),
+                    manual_endpoint
+                )
+            };
+            probe_single_auth_endpoint(&full_url, http_client).await?
+        } else {
+            // Auto-discover common auth paths
+            discover_auth_endpoints(&config.target_url, &analysis, http_client).await?
+        };
+
+        if !discovery.endpoints.is_empty() {
+            if !config.json {
+                eprintln!(
+                    "[+] Found {} auth endpoint(s): {}",
+                    discovery.endpoints.len(),
+                    discovery.summary()
+                );
+            }
+            log::info!(
+                "Auth discovery found {} endpoints: {}",
+                discovery.endpoints.len(),
+                discovery.summary()
+            );
+
+            // Generate auth plan using LLM
+            if !config.json {
+                eprintln!("[*] Generating authentication plan using LLM...");
+            }
+            let (auth_plan, auth_usage) = claude
+                .generate_auth_plan(
+                    &discovery,
+                    config.auth_instructions.as_deref(),
+                    &config.target_url,
+                    &analysis,
+                )
+                .await
+                .context("Failed to generate auth plan")?;
+            token_usage.add(&auth_usage);
+
+            log::info!("Auth plan: {}", auth_plan.summary);
+
+            // Attempt authentication
+            if !config.json {
+                if config.auto_register && discovery.registration_available {
+                    eprintln!("[*] Attempting registration and login...");
+                } else {
+                    eprintln!("[*] Attempting authentication...");
+                }
+            }
+            let auth_attempt =
+                attempt_authentication(&discovery, &auth_plan, http_client, config.auto_register)
+                    .await?;
+
+            if auth_attempt.success {
+                if !config.json {
+                    eprintln!(
+                        "[+] Authentication successful! Token type: {:?}",
+                        auth_attempt.token_type
+                    );
+                    if auth_attempt.user_created {
+                        if let Some(ref creds) = auth_attempt.credentials_used {
+                            eprintln!("[+] Created test user: {}", creds.email);
+                        }
+                    }
+                }
+                log::info!(
+                    "Authentication successful! Token type: {:?}",
+                    auth_attempt.token_type
+                );
+            } else {
+                if !config.json {
+                    eprintln!(
+                        "[-] Authentication not completed: {}",
+                        auth_attempt.error_message.as_deref().unwrap_or("unknown")
+                    );
+                }
+                log::info!(
+                    "Authentication not completed: {}",
+                    auth_attempt.error_message.as_deref().unwrap_or("unknown")
+                );
+            }
+
+            // Include auth summary in LLM context for better wordlist generation
+            full_summary.push_str(&format!("\n\nAuthentication: {}", auth_plan.summary));
+
+            Some((discovery, auth_plan, auth_attempt))
+        } else {
+            if !config.json {
+                eprintln!("[-] No authentication endpoints discovered");
+            }
+            log::info!("No authentication endpoints discovered");
+            None
+        }
+    } else {
+        log::info!("Auth discovery disabled via --no-discover-auth");
+        None
+    };
 
     // Generate attack surface report
     let (attack_report, report_usage) = claude
@@ -151,6 +283,7 @@ pub async fn generate_wordlist(
         recon_urls,
         technologies,
         token_usage,
+        auth_result,
     })
 }
 

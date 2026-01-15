@@ -26,6 +26,7 @@ use std::{
     fs::read_to_string,
     io::BufRead,
     path::{Path, PathBuf},
+    sync::{Arc, RwLock},
 };
 use url::form_urlencoded;
 
@@ -104,6 +105,22 @@ pub struct Configuration {
     /// Whether to run OPTIONS discovery on 405 endpoints
     #[serde(default)]
     pub discover_methods: bool,
+
+    /// Manually specified authentication endpoint (ex: /api/auth/login)
+    #[serde(default)]
+    pub auth_endpoint: String,
+
+    /// Instructions for authentication (ex: 'POST JSON with email and password fields')
+    #[serde(default)]
+    pub auth_instructions: String,
+
+    /// Whether to attempt creating a test account if registration is discovered
+    #[serde(default)]
+    pub auto_register: bool,
+
+    /// Whether to disable automatic auth endpoint discovery (default: false, i.e. discovery enabled)
+    #[serde(default)]
+    pub no_discover_auth: bool,
 
     /// Anthropic API key for LLM wordlist generation
     #[serde(default)]
@@ -241,6 +258,10 @@ pub struct Configuration {
     /// HTTP headers to be used in each request
     #[serde(default)]
     pub headers: HashMap<String, String>,
+
+    /// Auth headers set at runtime after authentication discovery (interior mutability for Arc<Configuration>)
+    #[serde(skip)]
+    pub auth_headers: Arc<RwLock<HashMap<String, String>>>,
 
     /// URL query parameters
     #[serde(default)]
@@ -480,11 +501,16 @@ impl Default for Configuration {
             filter_status: Vec::new(),
             filter_similar: Vec::new(),
             headers: HashMap::new(),
+            auth_headers: Arc::new(RwLock::new(HashMap::new())),
             depth: depth(),
             threads: threads(),
             recon_file: String::new(),
             wordlist_only: false,
             discover_methods: false,
+            auth_endpoint: String::new(),
+            auth_instructions: String::new(),
+            auto_register: false,
+            no_discover_auth: false,
             anthropic_key: std::env::var("ANTHROPIC_API_KEY").unwrap_or_default(),
             generated_wordlist: Vec::new(),
             dont_collect: ignored_extensions(),
@@ -1106,6 +1132,23 @@ impl Configuration {
             config.discover_methods = true;
         }
 
+        // Authentication discovery options
+        update_config_if_present!(&mut config.auth_endpoint, args, "auth_endpoint", String);
+        update_config_if_present!(
+            &mut config.auth_instructions,
+            args,
+            "auth_instructions",
+            String
+        );
+
+        if came_from_cli!(args, "auto_register") {
+            config.auto_register = true;
+        }
+
+        if came_from_cli!(args, "no_discover_auth") {
+            config.no_discover_auth = true;
+        }
+
         if came_from_cli!(args, "unique") {
             config.unique = true;
         }
@@ -1454,6 +1497,10 @@ impl Configuration {
         update_if_not_default!(&mut conf.recon_file, new.recon_file, "");
         update_if_not_default!(&mut conf.wordlist_only, new.wordlist_only, false);
         update_if_not_default!(&mut conf.discover_methods, new.discover_methods, false);
+        update_if_not_default!(&mut conf.auth_endpoint, new.auth_endpoint, "");
+        update_if_not_default!(&mut conf.auth_instructions, new.auth_instructions, "");
+        update_if_not_default!(&mut conf.auto_register, new.auto_register, false);
+        update_if_not_default!(&mut conf.no_discover_auth, new.no_discover_auth, false);
         update_if_not_default!(&mut conf.status_codes, new.status_codes, status_codes());
         // status_codes() is the default for replay_codes, if they're not provided
         update_if_not_default!(&mut conf.replay_codes, new.replay_codes, status_codes());

@@ -480,6 +480,311 @@ Output the wordlist now:"#,
         paths.dedup();
         paths
     }
+
+    /// Generate an authentication plan based on discovered auth endpoints
+    /// Returns the auth plan and token usage metrics
+    pub async fn generate_auth_plan(
+        &self,
+        auth_discovery: &super::auth_discovery::AuthDiscoveryResult,
+        user_instructions: Option<&str>,
+        target_url: &str,
+        analysis: &TechAnalysis,
+    ) -> Result<(super::auth_discovery::AuthPlan, UsageMetrics)> {
+        let system_prompt = self.build_auth_plan_system_prompt();
+        let user_prompt = self.build_auth_plan_user_prompt(
+            auth_discovery,
+            user_instructions,
+            target_url,
+            analysis,
+        );
+
+        let request = ClaudeRequest {
+            model: CLAUDE_MODEL.to_string(),
+            max_tokens: 2048,
+            messages: vec![Message {
+                role: "user".to_string(),
+                content: user_prompt,
+            }],
+            system: system_prompt,
+        };
+
+        let response = self
+            .client
+            .post(CLAUDE_API_URL)
+            .header("x-api-key", &self.api_key)
+            .header("anthropic-version", ANTHROPIC_VERSION)
+            .header("content-type", "application/json")
+            .json(&request)
+            .send()
+            .await
+            .context("Failed to send request to Claude API")?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let error_text = response.text().await.unwrap_or_default();
+            return Err(anyhow!("Claude API error ({}): {}", status, error_text));
+        }
+
+        let claude_response: ClaudeResponse = response
+            .json()
+            .await
+            .context("Failed to parse Claude API response")?;
+
+        let text = claude_response
+            .content
+            .first()
+            .map(|c| c.text.clone())
+            .unwrap_or_default();
+
+        // Extract usage metrics
+        let usage = claude_response.usage.unwrap_or_default();
+
+        // Parse the auth plan from the response
+        let auth_plan = self.parse_auth_plan_response(&text, auth_discovery, target_url);
+
+        Ok((auth_plan, usage))
+    }
+
+    fn build_auth_plan_system_prompt(&self) -> String {
+        r#"You are an expert in web application authentication analysis. Your task is to analyze discovered authentication endpoints and generate a concrete authentication plan.
+
+Output a JSON object with this structure:
+{
+  "registration": {
+    "endpoint": "/api/auth/register",
+    "method": "POST",
+    "content_type": "application/json",
+    "body_template": "{\"email\": \"{email}\", \"password\": \"{password}\"}",
+    "required_fields": ["email", "password"]
+  },
+  "login": {
+    "endpoint": "/api/auth/login",
+    "method": "POST",
+    "content_type": "application/json",
+    "body_template": "{\"email\": \"{email}\", \"password\": \"{password}\"}",
+    "required_fields": ["email", "password"]
+  },
+  "token_location": "body:token",
+  "summary": "JSON-based auth with email/password, returns JWT token in body"
+}
+
+RULES:
+1. Use {email} and {password} as placeholders in body_template
+2. token_location can be: "body:fieldname", "cookie", "header"
+3. If an endpoint doesn't exist, omit it from the response
+4. Base your analysis on the discovered endpoints and their status codes
+5. 405 status means the endpoint exists but requires a different method (usually POST)
+6. Output ONLY valid JSON, no explanations"#.to_string()
+    }
+
+    fn build_auth_plan_user_prompt(
+        &self,
+        auth_discovery: &super::auth_discovery::AuthDiscoveryResult,
+        user_instructions: Option<&str>,
+        target_url: &str,
+        analysis: &TechAnalysis,
+    ) -> String {
+        let mut endpoints_info = String::new();
+        for endpoint in &auth_discovery.endpoints {
+            endpoints_info.push_str(&format!(
+                "- {} {} (status: {}, type: {})\n",
+                endpoint.method, endpoint.url, endpoint.status_code, endpoint.endpoint_type
+            ));
+            if !endpoint.detected_fields.is_empty() {
+                endpoints_info.push_str(&format!(
+                    "  Detected fields: {}\n",
+                    endpoint.detected_fields.join(", ")
+                ));
+            }
+        }
+
+        let tech_info = analysis
+            .technologies
+            .iter()
+            .map(|(t, score)| format!("{:?} ({:.0}%)", t, score * 100.0))
+            .collect::<Vec<_>>()
+            .join(", ");
+
+        let user_instruction_text = user_instructions
+            .map(|i| format!("\nUser provided instructions: {}\n", i))
+            .unwrap_or_default();
+
+        format!(
+            r#"Target: {}
+
+DETECTED TECHNOLOGIES: {}
+
+DISCOVERED AUTH ENDPOINTS:
+{}
+{}
+Generate an authentication plan JSON based on these endpoints. If user instructions are provided, follow them closely."#,
+            target_url, tech_info, endpoints_info, user_instruction_text
+        )
+    }
+
+    fn parse_auth_plan_response(
+        &self,
+        response: &str,
+        auth_discovery: &super::auth_discovery::AuthDiscoveryResult,
+        target_url: &str,
+    ) -> super::auth_discovery::AuthPlan {
+        use super::auth_discovery::{AuthAction, AuthPlan, TokenLocation};
+
+        // Helper to ensure endpoint is an absolute URL
+        let make_absolute = |endpoint: &str| -> String {
+            if endpoint.starts_with("http://") || endpoint.starts_with("https://") {
+                endpoint.to_string()
+            } else {
+                // Prepend target URL to relative path
+                let base = target_url.trim_end_matches('/');
+                let path = if endpoint.starts_with('/') {
+                    endpoint.to_string()
+                } else {
+                    format!("/{}", endpoint)
+                };
+                format!("{}{}", base, path)
+            }
+        };
+
+        // Try to parse as JSON
+        if let Ok(json) = serde_json::from_str::<serde_json::Value>(response) {
+            let mut plan = AuthPlan::default();
+
+            // Parse registration
+            if let Some(reg) = json.get("registration") {
+                let raw_endpoint = reg.get("endpoint").and_then(|v| v.as_str()).unwrap_or("");
+                plan.registration = Some(AuthAction {
+                    endpoint: make_absolute(raw_endpoint),
+                    method: reg
+                        .get("method")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("POST")
+                        .to_string(),
+                    content_type: reg
+                        .get("content_type")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("application/json")
+                        .to_string(),
+                    body_template: reg
+                        .get("body_template")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or(r#"{"email": "{email}", "password": "{password}"}"#)
+                        .to_string(),
+                    required_fields: reg
+                        .get("required_fields")
+                        .and_then(|v| v.as_array())
+                        .map(|arr| {
+                            arr.iter()
+                                .filter_map(|v| v.as_str().map(String::from))
+                                .collect()
+                        })
+                        .unwrap_or_else(|| vec!["email".to_string(), "password".to_string()]),
+                });
+            }
+
+            // Parse login
+            if let Some(login) = json.get("login") {
+                let raw_endpoint = login.get("endpoint").and_then(|v| v.as_str()).unwrap_or("");
+                plan.login = Some(AuthAction {
+                    endpoint: make_absolute(raw_endpoint),
+                    method: login
+                        .get("method")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("POST")
+                        .to_string(),
+                    content_type: login
+                        .get("content_type")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("application/json")
+                        .to_string(),
+                    body_template: login
+                        .get("body_template")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or(r#"{"email": "{email}", "password": "{password}"}"#)
+                        .to_string(),
+                    required_fields: login
+                        .get("required_fields")
+                        .and_then(|v| v.as_array())
+                        .map(|arr| {
+                            arr.iter()
+                                .filter_map(|v| v.as_str().map(String::from))
+                                .collect()
+                        })
+                        .unwrap_or_else(|| vec!["email".to_string(), "password".to_string()]),
+                });
+            }
+
+            // Parse token location
+            if let Some(token_loc) = json.get("token_location").and_then(|v| v.as_str()) {
+                plan.token_location = if token_loc.starts_with("body:") {
+                    TokenLocation::ResponseBodyField(
+                        token_loc.trim_start_matches("body:").to_string(),
+                    )
+                } else if token_loc == "cookie" {
+                    TokenLocation::SetCookieHeader
+                } else if token_loc == "header" {
+                    TokenLocation::AuthorizationHeader
+                } else {
+                    TokenLocation::Unknown
+                };
+            }
+
+            // Parse summary
+            plan.summary = json
+                .get("summary")
+                .and_then(|v| v.as_str())
+                .unwrap_or("Authentication plan generated")
+                .to_string();
+
+            return plan;
+        }
+
+        // Fall back to generating a plan from discovery data
+        self.generate_fallback_auth_plan(auth_discovery)
+    }
+
+    fn generate_fallback_auth_plan(
+        &self,
+        auth_discovery: &super::auth_discovery::AuthDiscoveryResult,
+    ) -> super::auth_discovery::AuthPlan {
+        use super::auth_discovery::{AuthAction, AuthPlan, TokenLocation};
+
+        let mut plan = AuthPlan::default();
+
+        // Create registration action if available
+        if let Some(ref register_endpoint) = auth_discovery.register_endpoint {
+            plan.registration = Some(AuthAction {
+                endpoint: register_endpoint.url.clone(),
+                method: "POST".to_string(),
+                content_type: register_endpoint
+                    .content_type
+                    .clone()
+                    .unwrap_or_else(|| "application/json".to_string()),
+                body_template: r#"{"email": "{email}", "password": "{password}"}"#.to_string(),
+                required_fields: vec!["email".to_string(), "password".to_string()],
+            });
+        }
+
+        // Create login action if available
+        if let Some(ref login_endpoint) = auth_discovery.login_endpoint {
+            plan.login = Some(AuthAction {
+                endpoint: login_endpoint.url.clone(),
+                method: "POST".to_string(),
+                content_type: login_endpoint
+                    .content_type
+                    .clone()
+                    .unwrap_or_else(|| "application/json".to_string()),
+                body_template: r#"{"email": "{email}", "password": "{password}"}"#.to_string(),
+                required_fields: vec!["email".to_string(), "password".to_string()],
+            });
+        }
+
+        // Default to token in response body
+        plan.token_location = TokenLocation::ResponseBodyField("token".to_string());
+        plan.summary = format!("Authentication via {}", auth_discovery.summary());
+
+        plan
+    }
 }
 
 #[cfg(test)]

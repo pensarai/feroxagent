@@ -270,6 +270,13 @@ pub async fn make_request(
         request = request.header("User-Agent", user_agent);
     }
 
+    // Add auth headers if any were set after authentication discovery
+    if let Ok(auth_headers) = config.auth_headers.read() {
+        for (key, value) in auth_headers.iter() {
+            request = request.header(key, value);
+        }
+    }
+
     match request.send().await {
         Err(e) => {
             log::trace!("exit: make_request -> {e}");

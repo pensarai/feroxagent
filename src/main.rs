@@ -34,7 +34,7 @@ use feroxagent::{
     smart_wordlist::{
         self, confirm_methods_batch, detect_parameterized_endpoint, discover_methods_for_405s,
         fingerprint_api_prefixes, generate_canonical_inventory_with_wildcards, output_wordlist,
-        DiscoveredEndpoint, GeneratorConfig, PentestReport,
+        AuthTokenType, DiscoveredEndpoint, GeneratorConfig, PentestReport,
     },
     utils::{fmt_err, slugify_filename},
 };
@@ -201,12 +201,72 @@ async fn wrapped_main(config: Arc<Configuration>) -> Result<()> {
         } else {
             Some(config.recon_file.clone())
         },
+        auth_endpoint: if config.auth_endpoint.is_empty() {
+            None
+        } else {
+            Some(config.auth_endpoint.clone())
+        },
+        auth_instructions: if config.auth_instructions.is_empty() {
+            None
+        } else {
+            Some(config.auth_instructions.clone())
+        },
+        auto_register: config.auto_register,
+        no_discover_auth: config.no_discover_auth,
+        json: config.json,
     };
 
     let generation_result =
         smart_wordlist::generate_wordlist(generator_config, &config.client).await;
 
     let result = generation_result.context("Failed to generate wordlist")?;
+
+    // Inject auth headers if authentication was successful
+    if let Some((_, _, ref auth_result)) = result.auth_result {
+        if auth_result.success {
+            if let Ok(mut auth_headers) = config.auth_headers.write() {
+                match auth_result.token_type {
+                    AuthTokenType::Bearer => {
+                        if let Some(ref token) = auth_result.token {
+                            auth_headers
+                                .insert("Authorization".to_string(), format!("Bearer {}", token));
+                            log::info!("Added Bearer token to requests");
+                            if !config.json {
+                                eprintln!("[+] Authentication successful - added Bearer token to requests");
+                            }
+                        }
+                    }
+                    AuthTokenType::Cookie => {
+                        // Combine all cookies into a single Cookie header
+                        if !auth_result.cookies.is_empty() {
+                            let cookie_header = auth_result.cookies.join("; ");
+                            auth_headers.insert("Cookie".to_string(), cookie_header);
+                            log::info!("Added session cookies to requests");
+                            if !config.json {
+                                eprintln!("[+] Authentication successful - added session cookies to requests");
+                            }
+                        }
+                    }
+                    AuthTokenType::ApiKey => {
+                        if let Some(ref token) = auth_result.token {
+                            // For API keys, the auth_plan should have specified where to put it
+                            // Default to X-API-Key header
+                            auth_headers.insert("X-API-Key".to_string(), token.clone());
+                            log::info!("Added API key to requests");
+                            if !config.json {
+                                eprintln!(
+                                    "[+] Authentication successful - added API key to requests"
+                                );
+                            }
+                        }
+                    }
+                    AuthTokenType::None => {}
+                }
+            }
+        } else if !config.json {
+            eprintln!("[-] Authentication attempted but was not successful");
+        }
+    }
 
     // Initialize the pentest report
     let mut pentest_report = PentestReport::new(config.target_url.clone());
@@ -217,6 +277,9 @@ async fn wrapped_main(config: Arc<Configuration>) -> Result<()> {
 
     // Store token usage for JSON output
     let token_usage = result.token_usage.clone();
+
+    // Store auth result for JSON output
+    let auth_result_for_report = result.auth_result.clone();
 
     if !config.json {
         eprintln!(
@@ -714,7 +777,8 @@ async fn wrapped_main(config: Arc<Configuration>) -> Result<()> {
     // Output the comprehensive report
     if config.json {
         // JSON output to stdout only
-        let json_output = pentest_report.to_json_output(&token_usage);
+        let json_output =
+            pentest_report.to_json_output(&token_usage, auth_result_for_report.as_ref());
         println!(
             "{}",
             serde_json::to_string_pretty(&json_output).unwrap_or_else(|e| {

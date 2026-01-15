@@ -83,6 +83,7 @@ cargo build --release
 
 - **Technology Detection**: Automatically detects frameworks like Next.js, React, Vue, Angular, Rails, Django, Laravel, WordPress, and more from URL patterns
 - **AI-Powered Wordlists**: Uses Claude API to generate context-aware wordlists tailored to the target's tech stack
+- **Authentication Discovery**: Automatically discovers auth endpoints, can register test accounts, and authenticates to access protected routes
 - **Optional HTTP Probing**: Gathers additional context from server headers for more accurate wordlist generation
 - **Seamless Scanning**: Generated wordlists are automatically used for content discovery (or output separately)
 
@@ -144,6 +145,15 @@ feroxagent -u https://target.com --recon-file urls.txt
 | `--wordlist-only` | Output generated wordlist to stdout and exit (don't scan) |
 | `--json` | Output structured JSON to stdout (canonical endpoints + token usage) |
 
+### Authentication Options
+
+| Flag | Description |
+|------|-------------|
+| `--auto-register` | Attempt to create a test account if registration endpoint is discovered |
+| `--auth-endpoint <URL>` | Manually specify the authentication endpoint (e.g., `/api/auth/login`) |
+| `--auth-instructions <TEXT>` | Provide instructions for authentication (e.g., `'use username field instead of email'`) |
+| `--no-discover-auth` | Disable automatic authentication endpoint discovery |
+
 ### Inherited feroxbuster Options
 
 feroxagent inherits most of feroxbuster's powerful options:
@@ -177,19 +187,25 @@ feroxagent --help
    - Static file structures
    - Route conventions
 
-3. **HTTP Probing**: Automatically makes HEAD requests to gather:
+3. **Authentication Discovery**: Automatically discovers and attempts authentication:
+   - Probes common auth endpoints (`/api/auth/login`, `/login`, `/api/auth/register`, etc.)
+   - Uses AI to generate an authentication plan based on detected endpoints
+   - With `--auto-register`, creates a test account and logs in
+   - Injects auth tokens/cookies into subsequent requests to access protected routes
+
+4. **HTTP Probing**: Automatically makes HEAD requests to gather:
    - Server headers
    - X-Powered-By information
    - Content types
 
-4. **Attack Surface Report**: Generates an actionable report highlighting:
+5. **Attack Surface Report**: Generates an actionable report highlighting:
    - High-value endpoints to target
    - Potential vulnerabilities based on detected stack
    - Recommended attack vectors (prioritized)
 
-5. **Generate Wordlist**: Creates a targeted wordlist based on the detected tech stack
+6. **Generate Wordlist**: Creates a targeted wordlist based on the detected tech stack
 
-6. **Scan Target**: Uses the generated wordlist to perform content discovery (or outputs the wordlist with `--wordlist-only`)
+7. **Scan Target**: Uses the generated wordlist to perform content discovery (or outputs the wordlist with `--wordlist-only`)
 
 ## Example Output
 
@@ -242,9 +258,39 @@ feroxagent --help
     "total_tokens": 14432
   },
   "stats": {
-    "total_endpoints": 23,
-    "parameterized_endpoints": 8,
-    "catch_all_endpoints": 3
+    "total_paths_tested": 342,
+    "total_filtered_noise": 156
+  },
+  "auth_discovery": {
+    "discovered": true,
+    "authenticated": true,
+    "endpoints": [
+      {
+        "url": "https://example.com/api/auth/login",
+        "type": "Login",
+        "method": "POST",
+        "detected_fields": ["email", "password"],
+        "status_code": 200
+      },
+      {
+        "url": "https://example.com/api/auth/register",
+        "type": "Register",
+        "method": "POST",
+        "detected_fields": ["email", "password", "username"],
+        "status_code": 201
+      }
+    ],
+    "registration_available": true,
+    "login_endpoint": "https://example.com/api/auth/login",
+    "register_endpoint": "https://example.com/api/auth/register",
+    "auth_type": "Bearer",
+    "user_created": true,
+    "token": "eyJhbGciOiJIUzI1NiIs...",
+    "credentials": {
+      "email": "feroxtest_12345@example.com",
+      "password": "FeroxTest123!"
+    },
+    "summary": "JSON-based auth with email/password, returns JWT token in body"
   }
 }
 ```
@@ -262,6 +308,26 @@ katana -u https://example.com -silent -d 3 | \
 # Or generate wordlist for use with other tools
 katana -u https://example.com -silent | \
   feroxagent -u https://example.com --wordlist-only > custom-wordlist.txt
+```
+
+### With Authentication
+
+```bash
+# Auto-register a test account and scan authenticated routes
+katana -u https://example.com -silent | \
+  feroxagent -u https://example.com --auto-register
+
+# Manually specify auth endpoint with custom instructions
+katana -u https://example.com -silent | \
+  feroxagent -u https://example.com \
+    --auth-endpoint /api/login \
+    --auth-instructions "POST JSON with username and password fields" \
+    --auto-register
+
+# Get JSON output with auth credentials for use in other tools
+katana -u https://example.com -silent | \
+  feroxagent -u https://example.com --auto-register --json | \
+  jq '.auth_discovery.token'
 ```
 
 ## Technology Detection

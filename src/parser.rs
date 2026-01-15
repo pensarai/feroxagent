@@ -591,6 +591,36 @@ pub fn initialize() -> Command {
                 .help("Run OPTIONS requests on 405 endpoints to discover allowed methods"),
         )
         .arg(
+            Arg::new("auth_endpoint")
+                .long("auth-endpoint")
+                .value_name("URL")
+                .num_args(1)
+                .help_heading("Authentication settings")
+                .help("Manually specify the authentication endpoint (ex: /api/auth/login)"),
+        )
+        .arg(
+            Arg::new("auth_instructions")
+                .long("auth-instructions")
+                .value_name("TEXT")
+                .num_args(1)
+                .help_heading("Authentication settings")
+                .help("Provide instructions for authentication (ex: 'POST JSON with email and password fields')"),
+        )
+        .arg(
+            Arg::new("auto_register")
+                .long("auto-register")
+                .num_args(0)
+                .help_heading("Authentication settings")
+                .help("Attempt to create a test account if registration endpoint is discovered"),
+        )
+        .arg(
+            Arg::new("no_discover_auth")
+                .long("no-discover-auth")
+                .num_args(0)
+                .help_heading("Authentication settings")
+                .help("Disable automatic authentication endpoint discovery"),
+        )
+        .arg(
             Arg::new("auto_tune")
                 .long("auto-tune")
                 .num_args(0)
