@@ -378,7 +378,7 @@ struct OpenAIChoice {
 #[derive(Debug, Deserialize)]
 struct OpenAIUsage {
     prompt_tokens: u32,
-    completion_tokens: u32
+    completion_tokens: u32,
 }
 
 impl OpenAIProvider {
@@ -1124,5 +1124,210 @@ not-a-path
         };
         assert_eq!(config.provider_type(), ProviderType::Anthropic);
         assert_eq!(config.model_name(), "claude-sonnet-4-20250514");
+    }
+
+    #[test]
+    fn test_openai_provider_requires_api_key() {
+        let result = OpenAIProvider::new(String::new(), "gpt-4".to_string(), None);
+        assert!(result.is_err());
+        let err = result.err().unwrap().to_string();
+        assert!(err.contains("OpenAI API key is required"));
+    }
+
+    #[test]
+    fn test_openai_provider_base_url_normalization() {
+        // Default URL (no base_url provided)
+        let provider =
+            OpenAIProvider::new("test-key".to_string(), "gpt-4".to_string(), None).unwrap();
+        assert_eq!(
+            provider.base_url,
+            "https://api.openai.com/v1/chat/completions"
+        );
+
+        // Custom URL without /chat/completions
+        let provider = OpenAIProvider::new(
+            "test-key".to_string(),
+            "llama3".to_string(),
+            Some("https://api.baseten.co/v1".to_string()),
+        )
+        .unwrap();
+        assert_eq!(
+            provider.base_url,
+            "https://api.baseten.co/v1/chat/completions"
+        );
+
+        // Custom URL with trailing slash
+        let provider = OpenAIProvider::new(
+            "test-key".to_string(),
+            "llama3".to_string(),
+            Some("https://api.baseten.co/v1/".to_string()),
+        )
+        .unwrap();
+        assert_eq!(
+            provider.base_url,
+            "https://api.baseten.co/v1/chat/completions"
+        );
+
+        // Custom URL already has /chat/completions
+        let provider = OpenAIProvider::new(
+            "test-key".to_string(),
+            "llama3".to_string(),
+            Some("https://api.baseten.co/v1/chat/completions".to_string()),
+        )
+        .unwrap();
+        assert_eq!(
+            provider.base_url,
+            "https://api.baseten.co/v1/chat/completions"
+        );
+    }
+
+    #[test]
+    fn test_anthropic_provider_requires_api_key() {
+        let result = AnthropicProvider::new(String::new(), None);
+        assert!(result.is_err());
+        let err = result.err().unwrap().to_string();
+        assert!(err.contains("Anthropic API key is required"));
+    }
+
+    #[test]
+    fn test_anthropic_provider_default_model() {
+        let provider = AnthropicProvider::new("test-key".to_string(), None).unwrap();
+        assert_eq!(provider.model, DEFAULT_ANTHROPIC_MODEL);
+    }
+
+    #[test]
+    fn test_anthropic_provider_custom_model() {
+        let provider =
+            AnthropicProvider::new("test-key".to_string(), Some("claude-3-opus".to_string()))
+                .unwrap();
+        assert_eq!(provider.model, "claude-3-opus");
+    }
+
+    #[test]
+    fn test_create_provider_anthropic() {
+        let config = ProviderConfig {
+            model: "anthropic/claude-sonnet-4-20250514".to_string(),
+            anthropic_key: "test-key".to_string(),
+            openai_key: String::new(),
+            api_base_url: None,
+        };
+        let result = create_provider(config);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_create_provider_openai() {
+        let config = ProviderConfig {
+            model: "openai/gpt-4-turbo".to_string(),
+            anthropic_key: String::new(),
+            openai_key: "test-key".to_string(),
+            api_base_url: None,
+        };
+        let result = create_provider(config);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_create_provider_openai_compatible() {
+        let config = ProviderConfig {
+            model: "openai-compatible/llama3-70b".to_string(),
+            anthropic_key: String::new(),
+            openai_key: "test-key".to_string(),
+            api_base_url: Some("https://api.baseten.co/v1".to_string()),
+        };
+        let result = create_provider(config);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_create_provider_openai_compatible_requires_base_url() {
+        let config = ProviderConfig {
+            model: "openai-compatible/llama3-70b".to_string(),
+            anthropic_key: String::new(),
+            openai_key: "test-key".to_string(),
+            api_base_url: None, // Missing required base URL
+        };
+        let result = create_provider(config);
+        assert!(result.is_err());
+        let err = result.err().unwrap().to_string();
+        assert!(err.contains("--api-base-url is required"));
+    }
+
+    #[test]
+    fn test_aggregated_usage_add() {
+        let mut aggregated = AggregatedUsage::default();
+        assert_eq!(aggregated.total_tokens, 0);
+
+        // Add first usage
+        let usage1 = UsageMetrics {
+            input_tokens: 100,
+            output_tokens: 50,
+            cache_read_input_tokens: 10,
+            cache_creation_input_tokens: 5,
+        };
+        aggregated.add(&usage1);
+        assert_eq!(aggregated.input_tokens, 100);
+        assert_eq!(aggregated.output_tokens, 50);
+        assert_eq!(aggregated.cache_read_input_tokens, 10);
+        assert_eq!(aggregated.cache_creation_input_tokens, 5);
+        assert_eq!(aggregated.total_tokens, 150);
+
+        // Add second usage
+        let usage2 = UsageMetrics {
+            input_tokens: 200,
+            output_tokens: 100,
+            cache_read_input_tokens: 20,
+            cache_creation_input_tokens: 0,
+        };
+        aggregated.add(&usage2);
+        assert_eq!(aggregated.input_tokens, 300);
+        assert_eq!(aggregated.output_tokens, 150);
+        assert_eq!(aggregated.cache_read_input_tokens, 30);
+        assert_eq!(aggregated.cache_creation_input_tokens, 5);
+        assert_eq!(aggregated.total_tokens, 450);
+    }
+
+    #[test]
+    fn test_provider_type_unknown_defaults_to_anthropic() {
+        let config = ProviderConfig {
+            model: "unknown-provider/some-model".to_string(),
+            anthropic_key: "test".to_string(),
+            openai_key: String::new(),
+            api_base_url: None,
+        };
+        assert_eq!(config.provider_type(), ProviderType::Anthropic);
+        assert_eq!(config.model_name(), "some-model");
+    }
+
+    #[test]
+    fn test_provider_type_case_insensitive() {
+        let config = ProviderConfig {
+            model: "OPENAI/gpt-4".to_string(),
+            anthropic_key: String::new(),
+            openai_key: "test".to_string(),
+            api_base_url: None,
+        };
+        assert_eq!(config.provider_type(), ProviderType::OpenAI);
+
+        let config = ProviderConfig {
+            model: "OpenAI-Compatible/llama3".to_string(),
+            anthropic_key: String::new(),
+            openai_key: "test".to_string(),
+            api_base_url: Some("https://example.com".to_string()),
+        };
+        assert_eq!(config.provider_type(), ProviderType::OpenAICompatible);
+    }
+
+    #[test]
+    fn test_model_name_with_nested_slashes() {
+        // Model names can contain slashes (e.g., org/model-name)
+        let config = ProviderConfig {
+            model: "openai-compatible/zai-org/GLM-4.7".to_string(),
+            anthropic_key: String::new(),
+            openai_key: "test".to_string(),
+            api_base_url: Some("https://example.com".to_string()),
+        };
+        assert_eq!(config.provider_type(), ProviderType::OpenAICompatible);
+        assert_eq!(config.model_name(), "zai-org/GLM-4.7");
     }
 }
