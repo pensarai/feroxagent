@@ -378,9 +378,7 @@ struct OpenAIChoice {
 #[derive(Debug, Deserialize)]
 struct OpenAIUsage {
     prompt_tokens: u32,
-    completion_tokens: u32,
-    #[serde(default)]
-    total_tokens: u32,
+    completion_tokens: u32
 }
 
 impl OpenAIProvider {
