@@ -1,8 +1,8 @@
 use super::utils::{
-    backup_extensions, depth, determine_requester_policy, dont_filter_default, extract_links,
-    ignored_extensions, methods, parse_request_file, report_and_exit, request_protocol,
-    response_size_limit, save_state, serialized_type, split_header, split_query, status_codes,
-    threads, timeout, user_agent, OutputLevel, RequesterPolicy,
+    backup_extensions, default_model, depth, determine_requester_policy, dont_filter_default,
+    extract_links, ignored_extensions, methods, parse_request_file, report_and_exit,
+    request_protocol, response_size_limit, save_state, serialized_type, split_header, split_query,
+    status_codes, threads, timeout, user_agent, OutputLevel, RequesterPolicy,
 };
 
 use crate::config::determine_output_level;
@@ -125,6 +125,19 @@ pub struct Configuration {
     /// Anthropic API key for LLM wordlist generation
     #[serde(default)]
     pub anthropic_key: String,
+
+    /// OpenAI API key for LLM wordlist generation (for openai or openai-compatible providers)
+    #[serde(default)]
+    pub openai_key: String,
+
+    /// Model to use for LLM generation (format: provider/model-name)
+    /// Examples: anthropic/claude-sonnet-4-20250514, openai/gpt-4-turbo, openai-compatible/llama3
+    #[serde(default = "default_model")]
+    pub model: String,
+
+    /// Custom API base URL for OpenAI-compatible endpoints
+    #[serde(default)]
+    pub api_base_url: String,
 
     /// Generated wordlist (populated at runtime by LLM)
     #[serde(skip)]
@@ -512,6 +525,9 @@ impl Default for Configuration {
             auto_register: false,
             no_discover_auth: false,
             anthropic_key: std::env::var("ANTHROPIC_API_KEY").unwrap_or_default(),
+            openai_key: std::env::var("OPENAI_API_KEY").unwrap_or_default(),
+            model: default_model(),
+            api_base_url: String::new(),
             generated_wordlist: Vec::new(),
             dont_collect: ignored_extensions(),
             backup_extensions: backup_extensions(),
@@ -1149,6 +1165,18 @@ impl Configuration {
             config.no_discover_auth = true;
         }
 
+        // LLM provider settings
+        update_config_if_present!(&mut config.model, args, "model", String);
+        update_config_if_present!(&mut config.api_base_url, args, "api_base_url", String);
+
+        // API keys from CLI override env vars
+        if let Some(key) = args.get_one::<String>("anthropic_key") {
+            config.anthropic_key = key.clone();
+        }
+        if let Some(key) = args.get_one::<String>("openai_key") {
+            config.openai_key = key.clone();
+        }
+
         if came_from_cli!(args, "unique") {
             config.unique = true;
         }
@@ -1501,6 +1529,11 @@ impl Configuration {
         update_if_not_default!(&mut conf.auth_instructions, new.auth_instructions, "");
         update_if_not_default!(&mut conf.auto_register, new.auto_register, false);
         update_if_not_default!(&mut conf.no_discover_auth, new.no_discover_auth, false);
+        // API keys: CLI args override env vars (empty string is the default for CLI parsing)
+        update_if_not_default!(&mut conf.anthropic_key, new.anthropic_key, "");
+        update_if_not_default!(&mut conf.openai_key, new.openai_key, "");
+        update_if_not_default!(&mut conf.model, new.model, default_model());
+        update_if_not_default!(&mut conf.api_base_url, new.api_base_url, "");
         update_if_not_default!(&mut conf.status_codes, new.status_codes, status_codes());
         // status_codes() is the default for replay_codes, if they're not provided
         update_if_not_default!(&mut conf.replay_codes, new.replay_codes, status_codes());
