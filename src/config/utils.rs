@@ -107,6 +107,11 @@ pub(super) fn depth() -> usize {
     4
 }
 
+/// default model for LLM provider (backward compatible with Anthropic)
+pub(super) fn default_model() -> String {
+    String::from("anthropic/claude-sonnet-4-20250514")
+}
+
 /// default extract links
 pub(super) fn extract_links() -> bool {
     true

@@ -196,6 +196,13 @@ async fn wrapped_main(config: Arc<Configuration>) -> Result<()> {
     let generator_config = GeneratorConfig {
         target_url: config.target_url.clone(),
         anthropic_key: config.anthropic_key.clone(),
+        openai_key: config.openai_key.clone(),
+        model: config.model.clone(),
+        api_base_url: if config.api_base_url.is_empty() {
+            None
+        } else {
+            Some(config.api_base_url.clone())
+        },
         recon_file: if config.recon_file.is_empty() {
             None
         } else {
@@ -830,6 +837,9 @@ async fn clean_up(handles: Arc<Handles>, tasks: Tasks) -> Result<()> {
 }
 
 fn main() -> Result<()> {
+    // Load .env file if present (silently ignore if not found)
+    dotenvy::dotenv().ok();
+
     let config = Arc::new(Configuration::new().with_context(|| "Could not create Configuration")?);
 
     // setup logging based on the number of -v's used

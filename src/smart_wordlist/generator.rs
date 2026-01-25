@@ -7,7 +7,7 @@ use super::auth_discovery::{
     attempt_authentication, discover_auth_endpoints, probe_single_auth_endpoint,
     AuthDiscoveryResult, AuthPlan, AuthResult,
 };
-use super::llm::{AggregatedUsage, ClaudeClient};
+use super::llm::{create_provider, AggregatedUsage, ProviderConfig};
 use super::mutations::{expand_parameterized_paths, generate_mutations, MutationConfig};
 use super::probe::{probe_urls, summarize_probe_results};
 use anyhow::{Context, Result};
@@ -19,6 +19,12 @@ use std::io::{self, BufRead};
 pub struct GeneratorConfig {
     pub target_url: String,
     pub anthropic_key: String,
+    /// OpenAI API key (for openai or openai-compatible providers)
+    pub openai_key: String,
+    /// Model to use (format: provider/model-name)
+    pub model: String,
+    /// Custom API base URL for OpenAI-compatible endpoints
+    pub api_base_url: Option<String>,
     pub recon_file: Option<String>,
     /// Manually specified authentication endpoint
     pub auth_endpoint: Option<String>,
@@ -100,8 +106,14 @@ pub async fn generate_wordlist(
     }
 
     // Generate wordlist and attack report using LLM
-    log::info!("Generating wordlist and attack surface report using Claude API...");
-    let claude = ClaudeClient::new(config.anthropic_key.clone())?;
+    log::info!("Generating wordlist and attack surface report using LLM...");
+    let provider_config = ProviderConfig {
+        model: config.model.clone(),
+        anthropic_key: config.anthropic_key.clone(),
+        openai_key: config.openai_key.clone(),
+        api_base_url: config.api_base_url.clone(),
+    };
+    let llm = create_provider(provider_config)?;
 
     // Track aggregated token usage
     let mut token_usage = AggregatedUsage::default();
@@ -152,7 +164,7 @@ pub async fn generate_wordlist(
             if !config.json {
                 eprintln!("[*] Generating authentication plan using LLM...");
             }
-            let (auth_plan, auth_usage) = claude
+            let (auth_plan, auth_usage) = llm
                 .generate_auth_plan(
                     &discovery,
                     config.auth_instructions.as_deref(),
@@ -223,14 +235,14 @@ pub async fn generate_wordlist(
     };
 
     // Generate attack surface report
-    let (attack_report, report_usage) = claude
+    let (attack_report, report_usage) = llm
         .generate_attack_report(&full_summary, &config.target_url, &analysis, &probe_results)
         .await
         .context("Failed to generate attack surface report")?;
     token_usage.add(&report_usage);
 
     // Generate wordlist
-    let (llm_wordlist, wordlist_usage) = claude
+    let (llm_wordlist, wordlist_usage) = llm
         .generate_wordlist(&full_summary, &config.target_url)
         .await
         .context("Failed to generate wordlist from LLM")?;

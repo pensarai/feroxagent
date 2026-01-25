@@ -621,6 +621,38 @@ pub fn initialize() -> Command {
                 .help("Disable automatic authentication endpoint discovery"),
         )
         .arg(
+            Arg::new("model")
+                .long("model")
+                .value_name("PROVIDER/MODEL")
+                .num_args(1)
+                .help_heading("LLM settings")
+                .help("LLM model to use (default: anthropic/claude-sonnet-4-20250514). Examples: openai/gpt-4-turbo, openai-compatible/llama3-70b"),
+        )
+        .arg(
+            Arg::new("anthropic_key")
+                .long("anthropic-key")
+                .value_name("KEY")
+                .num_args(1)
+                .help_heading("LLM settings")
+                .help("Anthropic API key (can also use ANTHROPIC_API_KEY env var)"),
+        )
+        .arg(
+            Arg::new("openai_key")
+                .long("openai-key")
+                .value_name("KEY")
+                .num_args(1)
+                .help_heading("LLM settings")
+                .help("OpenAI API key for openai or openai-compatible providers (can also use OPENAI_API_KEY env var)"),
+        )
+        .arg(
+            Arg::new("api_base_url")
+                .long("api-base-url")
+                .value_name("URL")
+                .num_args(1)
+                .help_heading("LLM settings")
+                .help("Custom API base URL for OpenAI-compatible endpoints (required for openai-compatible provider)"),
+        )
+        .arg(
             Arg::new("auto_tune")
                 .long("auto-tune")
                 .num_args(0)
@@ -817,12 +849,25 @@ const EPILOGUE: &str = r#"NOTE:
     feroxagent is an AI-powered content discovery tool. It generates smart wordlists
     from recon data using LLM analysis, then scans targets with the generated wordlist.
 
-    Requires ANTHROPIC_API_KEY environment variable to be set:
-        export ANTHROPIC_API_KEY="sk-ant-..."
+    Supported LLM providers:
+        - Anthropic (default): Set ANTHROPIC_API_KEY or use --anthropic-key
+        - OpenAI: Set OPENAI_API_KEY or use --openai-key with --model openai/gpt-4-turbo
+        - OpenAI-compatible: Use --model openai-compatible/model-name with --api-base-url and --openai-key
 
 EXAMPLES:
-    Basic usage with recon data from katana:
+    Basic usage with recon data from katana (uses Anthropic by default):
+        export ANTHROPIC_API_KEY="sk-ant-..."
         katana -u http://127.1 | ./feroxagent -u http://127.1
+
+    Using OpenAI:
+        export OPENAI_API_KEY="sk-..."
+        katana -u http://127.1 | ./feroxagent -u http://127.1 --model openai/gpt-4-turbo
+
+    Using OpenAI-compatible endpoint (e.g., Baseten, Together, local LLM):
+        katana -u http://127.1 | ./feroxagent -u http://127.1 \
+            --model openai-compatible/llama3-70b \
+            --api-base-url https://api.baseten.co/v1 \
+            --openai-key "your-api-key"
 
     Output wordlist only (don't scan):
         katana -u http://127.1 | ./feroxagent -u http://127.1 --wordlist-only > custom.txt
@@ -832,9 +877,6 @@ EXAMPLES:
 
     Proxy traffic through Burp:
         katana -u http://127.1 | ./feroxagent -u http://127.1 --burp
-
-    Multiple headers:
-        katana -u http://127.1 | ./feroxagent -u http://127.1 -H Accept:application/json "Authorization: Bearer {token}"
     "#;
 
 #[cfg(test)]
